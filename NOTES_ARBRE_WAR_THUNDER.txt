@@ -1,0 +1,30 @@
+ARBRE DE RECHERCHE FAÇON WAR THUNDER — 205 véhicules, 10 nations, 12 rangs
+==========================================================================
+FICHIERS
+  NOUVEAU  js/roster-wt.js      (chargé après tank-catalog.js, dans lobby.html ET arena.html)
+  MODIFIÉ  js/lobby-sections.js (SecResearch réécrit, rsLayout, drapeaux SVG, pictogrammes)
+  MODIFIÉ  js/lobby-state.js    (Store.rankGate + Store.canResearch tient compte de la porte de rang)
+  MODIFIÉ  css/lobby.css        (ancien bloc « arbre » remplacé)
+
+CE QUI CHANGE
+  • 64 -> 205 véhicules (+141). Branches par nation (légers / moyens / lourds / MBT / chasseurs de chars),
+    plusieurs véhicules de départ gratuits par nation, rang strictement croissant sur chaque branche.
+  • BR affiché sur chaque carte (rang + 0.0 / 0.3 / 0.7 selon la puissance relative dans le rang).
+  • Coût de recherche = barème du rang × 1.0 / 1.1 / 1.2 selon le BR (tous les véhicules, anciens inclus).
+  • Porte de rang : pour ouvrir le rang R, posséder RANK_NEED[R] véhicules du rang inférieur de la nation
+    (tableau modifiable en tête de roster-wt.js : window.RANK_NEED).
+  • Interface : onglets de drapeaux (progression par nation), colonnes de rang avec plage de BR et cadenas,
+    cartes avec vignette 3D / BR / classe / coût, liens orthogonaux (vert = acquis, ambre = disponible),
+    glisser à la souris pour naviguer, balayage tactile sur les onglets, bouton « Véhicule actif »,
+    bouton d'orientation (rangs en colonnes = War Thunder, ou rangs en lignes = ancienne disposition).
+  • Correction : « T-34 heavy tank » est le char lourd américain T34 (120 mm, 64 t, rang VII, après le T29).
+  • Les anciens véhicules gardent leur nom (progression sauvegardée conservée) mais ont un nouveau rang
+    et un nouveau prérequis. Les anciens départs gratuits des petites nations (ex. Merkava Mk.2D, ZTZ-59,
+    Strv m/42) doivent maintenant être recherchés.
+
+AJOUTER UN VÉHICULE
+  Ajouter une ligne dans ROWS (roster-wt.js) : [nom, rang, catégorie, prérequis, année, canon, km/h,
+  équipage, tonnes, [hf,hs,hr,tf,ts,tr], {options}] ; le canon est une clé de GUNS (à ajouter si absent).
+  Le gabarit 3D, les obus et le BR sont calculés automatiquement.
+
+NOTE : valeurs de combat = estimations de jeu à l'échelle des véhicules existants.

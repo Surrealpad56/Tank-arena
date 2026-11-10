@@ -1,0 +1,40 @@
+/* ==========================================================================
+   THEME.CSS — Identité visuelle « Poste de commandement » (commune au lobby
+   et au combat). Acier froid, filets fins, repères numérotés, ambre signal ;
+   bleu glace = allié, rouge fusée = ennemi.
+   ========================================================================== */
+
+:root {
+  --bg: #0a0e11;
+  --bg-2: #10161a;
+  --panel: rgba(15, 21, 26, .86);
+  --panel-solid: #11181d;
+  --raised: #182229;
+  --line: rgba(190, 215, 230, .13);
+  --line-strong: rgba(190, 215, 230, .28);
+  --text: #e8eef2;
+  --dim: #93a1ab;
+  --faint: #5d6a73;
+  --amber: #ffb000;
+  --amber-d: #b87e00;
+  --ally: #4db4ff;
+  --foe: #ff5a44;
+  --ok: #6fdc8c;
+  --warn: #ffb000;
+  --bad: #ff5a44;
+  --font-display: "Roboto Condensed", "Arial Narrow", "Helvetica Neue", sans-serif-condensed, Arial, sans-serif;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --cut: 10px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font-family: var(--font-ui); color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+button { font-family: inherit; color: inherit; }
+.num { font-variant-numeric: tabular-nums; }
+.disp { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .06em; }
+
+/* Panneau à coins coupés */
+.cut {
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+}

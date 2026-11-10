@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tank Arena — Poste de commandement</title>
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/lobby.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Rail de navigation -->
+    <nav id="rail">
+      <a id="brand" href="#hq" aria-label="Tank Arena">
+        <svg viewBox="0 0 40 40" width="34" height="34"><path d="M4 30 L4 14 L20 5 L36 14 L36 30 L20 36 Z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M11 24 L20 14 L29 24" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>
+        <span class="disp">Tank<br>Arena</span>
+      </a>
+      <div id="nav"></div>
+      <div id="rail-foot" class="disp">v3 · 3D</div>
+    </nav>
+
+    <!-- Contenu -->
+    <div id="main">
+      <header id="top">
+        <div id="crumb"><span id="crumb-idx" class="num">01</span><h1 id="crumb-title" class="disp">Poste de commandement</h1></div>
+        <div id="me">
+          <button id="sel-chip" class="chip-btn" title="Changer de véhicule"><span id="sel-chip-name" class="disp">—</span><small id="sel-chip-cat">—</small></button>
+          <div id="profile">
+            <input id="p-name" maxlength="16" spellcheck="false" aria-label="Pseudo">
+            <div class="lvl"><span class="disp">Niveau</span> <b id="p-lvl" class="num">1</b></div>
+            <div class="xpbar"><i id="p-xpfill"></i></div>
+            <div id="p-xp" class="num"></div>
+          </div>
+        </div>
+      </header>
+      <main id="stage">
+        <section id="s-hq" class="sec"></section>
+        <section id="s-play" class="sec"></section>
+        <section id="s-hangar" class="sec"></section>
+        <section id="s-research" class="sec"></section>
+        <section id="s-career" class="sec"></section>
+        <section id="s-settings" class="sec"></section>
+        <section id="s-atelier" class="sec"></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast-l" class="hidden"></div>
+  <div id="modal" class="hidden"></div>
+  
+  
+
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/shared-data.js"></script>
+  <script src="js/tank-catalog.js"></script>
+  <script src="js/roster-wt.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/map-engine.js"></script>
+  <script src="js/map-defs.js"></script>
+  <script src="js/terrain-gen.js"></script>
+  <script src="js/model-loaders.js"></script>
+  <script src="models/models.js"></script>
+  <script src="js/tank-designs.js"></script>
+  <script src="js/tank-models.js"></script>
+  <script src="js/lobby-state.js"></script>
+  <script src="js/lobby-3d.js"></script>
+  <script src="js/lobby-sections.js"></script>
+  <script src="js/lobby-main.js"></script>
+</body>
+</html>

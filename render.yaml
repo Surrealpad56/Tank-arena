@@ -1,0 +1,8 @@
+# Déploiement gratuit sur Render (https://render.com) : « New + » → « Blueprint », ou créer un Web Service à la main.
+services:
+  - type: web
+    name: tank-arena
+    runtime: node
+    plan: free
+    buildCommand: "echo ok"
+    startCommand: "npm start"

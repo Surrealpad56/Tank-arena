@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tank Arena — Atelier de chars</title>
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+  <div id="ed">
+    <header id="bar">
+      <a id="back" href="lobby.html#hangar" title="Retour au QG">← QG</a>
+      <div id="brand" class="disp">Atelier</div>
+      <input id="dname" maxlength="40" spellcheck="false" aria-label="Nom du char">
+      <div class="grow"></div>
+      <button class="btn sm" id="b-new">Nouveau</button>
+      <button class="btn sm" id="b-open">Ouvrir</button>
+      <button class="btn sm primary" id="b-save">Enregistrer</button>
+      <button class="btn sm" id="b-apply">Utiliser en jeu</button>
+      <button class="btn sm" id="b-export" title="Télécharger le char en fichier .json">Exporter</button>
+      <button class="btn sm" id="b-import" title="Charger un fichier .json">Importer</button>
+      <button class="btn sm" id="b-shot" title="Enregistrer une image PNG">Capture</button>
+      <input type="file" id="f-import" accept=".json,application/json" hidden>
+    </header>
+
+    <aside id="left">
+      <nav id="tabs"></nav>
+      <div id="lbody"></div>
+    </aside>
+
+    <main id="vp">
+      <canvas id="cv"></canvas>
+      <div id="vtop">
+        <div class="grp" id="views"></div>
+        <div class="grp" id="toggles"></div>
+      </div>
+      <div id="vtools">
+        <div class="grp" id="tools"></div>
+        <div class="grp" id="axes"></div>
+        <div class="grp">Magnétisme <select id="snap"><option value="0">libre</option><option value="0.01">1 cm</option><option value="0.05" selected>5 cm</option><option value="0.1">10 cm</option><option value="0.25">25 cm</option></select></div>
+      </div>
+      <div id="vpose">
+        <label>Tourelle <input type="range" id="p-tur" min="-180" max="180" value="0"></label>
+        <label>Canon <input type="range" id="p-gun" min="-10" max="20" value="0"></label>
+        <button class="btn sm" id="p-fire">Tir</button>
+        <button class="btn sm" id="p-roll">Rouler</button>
+      </div>
+      <div id="hint"></div>
+    </main>
+
+    <aside id="right"><div id="rbody"></div></aside>
+  </div>
+  <div id="toast" class="hidden"></div>
+  <div id="modal" class="hidden"></div>
+
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/shared-data.js"></script>
+  <script src="js/tank-catalog.js"></script>
+  <script src="js/roster-wt.js"></script>
+  <script src="js/tank-designs.js"></script>
+  <script src="js/editor.js"></script>
+</body>
+</html>
