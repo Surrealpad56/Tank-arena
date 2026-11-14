@@ -23,7 +23,7 @@ const MODES = [
   { id: "skirmish", n: "03", name: "Escarmouche", desc: "Équipes de chars contre l'IA, zones à capturer. Premier à atteindre le score." },
   { id: "deathmatch", n: "04", name: "Deathmatch", desc: "Éliminez toute l'équipe ennemie. Pas de zones à capturer, seulement des destructions." },
   { id: "campaign", n: "05", name: "Campagne", desc: "Dix missions aux objectifs précis : cibles, vies, temps. Progression par véhicule." },
-  { id: "multi", n: "06", name: "Multijoueur", desc: "Jouez avec vos amis sur le même wifi. Un PC lance server.js, les autres rejoignent." }
+  { id: "multi", n: "06", name: "Multijoueur", desc: "Salons en ligne : choisissez votre équipe, voyez qui est connecté, l'hôte règle la partie." }
 ];
 
 /* ───── Champ d'essai ───── */
@@ -40,7 +40,7 @@ function tankOptions(cur, withRandom) {
 /* ───── Multijoueur local : adresse du serveur et état de la salle (server.js) ───── */
 const Multi = {
   room: null,
-  server() { return (location.protocol === "https:" ? location.host : null) || localStorage.getItem("mpServer") || (location.port === "3000" ? location.host : (location.hostname || "localhost") + ":3000"); },
+  server() { return (location.protocol === "https:" ? location.host : null) || localStorage.getItem("mpServer") || (location.protocol === "file:" || !location.host ? "localhost:3000" : location.host); },   // la page est servie par server.js : même adresse
   setServer(v) { localStorage.setItem("mpServer", (v || "").trim().replace(/^(https?|wss?):\/\//, "").replace(/\/.*$/, "")); },
   async refresh() {
     try { const r = await fetch((location.protocol === "https:" ? "https://" : "http://") + Multi.server() + "/api/room", { cache: "no-store" }); Multi.room = await r.json(); } catch (e) { Multi.room = null; return null; }
@@ -306,6 +306,12 @@ const SecPlay = {
     const [sum, sub] = cfgSummary(cfg);
     const xpRule = mode === "test" ? "Pas d'XP : touche K pour réinitialiser cibles et dégâts en plein essai." : mode === "sandbox" ? "Pas d'XP en entraînement." : mode === "campaign" ? "XP de partie + récompense de mission en cas de victoire." : mode === "deathmatch" ? "XP de partie, score basé sur les éliminations et les dégâts." : `XP de partie, ×${{ easy: 0.7, normal: 1, hard: 1.4 }[cfg.difficulty]} selon la difficulté.`;
     const canGo = true;
+    if (mode === "multi") {                       // Multijoueur : salons actifs, joueurs en ligne, salle d'attente (lobby-rooms.js)
+      el.innerHTML = `<div class="modes">${MODES.map(m => `<button class="mode ${m.id === mode ? "on" : ""}" data-a="mode" data-id="${m.id}"><span class="mi">${m.n}</span><h3>${m.name}</h3><p>${m.desc}</p></button>`).join("")}</div><div id="salons"></div>`;
+      on(el, { mode: d => { Salons.stop(); Store.setCfg({ mode: d.id }); SecPlay.render(el); } });
+      Salons.mount(el.querySelector("#salons")); return;
+    }
+    Salons.stop();
     el.innerHTML = `<div class="modes">${MODES.map(m => `<button class="mode ${m.id === mode ? "on" : ""}" data-a="mode" data-id="${m.id}"><span class="mi">${m.n}</span><h3>${m.name}</h3><p>${m.desc}</p></button>`).join("")}</div>
       <div class="play-grid"><div>${left}</div>
       <div class="card cut recap" style="position:sticky;top:0"><h3>Récapitulatif</h3><div class="body">

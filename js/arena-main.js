@@ -22,8 +22,9 @@ function spawnLocalPlayer() {
 function populateBots() {
   const cfg = ARENA_CFG;
   const keys = [];
-  for (let i = 0; i < cfg.allies; i++) keys.push(["A", i, pickBotKey()]);
-  for (let i = 0; i < cfg.enemies; i++) keys.push(["B", i, pickBotKey()]);
+  const mine = teamId || "A", other = mine === "A" ? "B" : "A";      // alliés = équipe du joueur, ennemis = l'autre
+  for (let i = 0; i < cfg.allies; i++) keys.push([mine, i, pickBotKey()]);
+  for (let i = 0; i < cfg.enemies; i++) keys.push([other, i, pickBotKey()]);
   if (cfg.mode === "campaign" && cfg.mission && cfg.mission.enemyTanks) { /* déjà géré par pickBotKey (enemyTanks) */ }
   return keys;
 }
@@ -35,7 +36,7 @@ async function boot() {
   try {
     teamId = "A";
     initAudio();
-    if (ARENA_CFG.mode === "multi") { HUD.setLoading(0.01, "Connexion au serveur…"); await Net.connect(); }
+    if (ARENA_CFG.mode === "multi") { HUD.setLoading(0.01, "Connexion au salon…"); await Net.connect(); teamId = Net.team || "A"; }
     await World.init(canvas, (p, text) => HUD.setLoading(p * 0.8, text));
     FX.init(World.S.scene, World.S.camera, World.S.renderer);
     HUD.setLoading(0.82, "Chargement des véhicules…");

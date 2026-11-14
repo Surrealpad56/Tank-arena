@@ -298,7 +298,7 @@ const HUD = (function () {
     if (H.fpsAcc > 0.5) { if (Settings.get("showFps")) el.fps.textContent = Math.round(H.fpsN / H.fpsAcc) + " IPS"; H.fpsAcc = 0; H.fpsN = 0; }
     if (H.toastT > 0) { H.toastT -= dt * 1000; if (H.toastT <= 0) el.toast.classList.add("hidden"); }
     // Score
-    el["sc-a"].textContent = teamScore.A; el["sc-b"].textContent = teamScore.B;
+    { const mb = localTank && localTank.teamId === "B"; el["sc-a"].textContent = mb ? teamScore.B : teamScore.A; el["sc-b"].textContent = mb ? teamScore.A : teamScore.B; }
     el["sc-mode"].textContent = rules.modeLabel(); el["sc-obj"].textContent = rules.objectiveText();
     // Véhicule
     const kmh = Math.abs(t.speed) / (PIXELS_PER_METER * TICK_RATE) * 3.6;

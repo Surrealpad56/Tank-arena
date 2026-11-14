@@ -107,7 +107,7 @@ function losInfo(x1, y1, z1, x2, y2, z2) {
 // POINTS DE CAPTURE
 // ============================================================
 // Deathmatch et champ d'essai : aucune zone (ni marqueur, ni minimap, ni objectif pour l'IA)
-const CAPTURE_POINTS = (ARENA_CFG.mode === "deathmatch" || ARENA_CFG.mode === "test") ? [] : MAP_LAYOUT.caps;
+const CAPTURE_POINTS = (ARENA_CFG.mode === "deathmatch" || ARENA_CFG.mode === "test" || ARENA_CFG.caps === false) ? [] : MAP_LAYOUT.caps;
 const CAPTURE_RATE = 1 / 180;
 const CAPTURE_SCORE_INTERVAL = 600; // 3 secondes pour capturer seul
 

@@ -346,10 +346,10 @@ class Tank extends Item {
     /* Groupe motopropulseur : puissance massique déduite de la vitesse de pointe (pas de donnée moteur dans les fiches). */
     const vKmh = this._tankModules.speed || 40;
     this._hpt = clamp(8 + vKmh * 0.28, 10, 26);                                   // ch / tonne
-    this._pw = this._hpt * 0.7457 * 0.62;                                          // W/kg utile aux chenilles (= m²/s³)
-    this._aMax = clamp(2.3 * Math.pow(30 / weightT, 0.25), 1.2, 3.0);              // adhérence / couple maxi au démarrage (m/s²)
-    this._yawMax = clamp(22 * Math.pow(this._hpt / 17, 0.4) * Math.pow(30 / weightT, 0.3), 12, 34) * Math.PI / 180;   // rad/s, rotation sur place
-    this._yawT = clamp(1.4 * Math.sqrt(weightT / 30), 0.9, 3.2);                   // s pour atteindre cette rotation (inertie en lacet)
+    this._pw = this._hpt * 0.7457 * 0.9;                                          // W/kg utile aux chenilles (= m²/s³)
+    this._aMax = clamp(3.5 * Math.pow(30 / weightT, 0.2), 2.0, 4.6);              // adhérence / couple maxi au démarrage (m/s²)
+    this._yawMax = clamp(36 * Math.pow(this._hpt / 17, 0.4) * Math.pow(30 / weightT, 0.25), 20, 52) * Math.PI / 180;   // rad/s, rotation sur place
+    this._yawT = clamp(0.5 * Math.sqrt(weightT / 30), 0.32, 1.1);                   // s pour atteindre cette rotation (inertie en lacet)
     this._steerIn = 0; this.lat = 0; this._flipT = 0; this._flipDir = 1; this._brk = 0; this._driven = false; this.accPitch = 0; this.accRoll = 0;
     this.maxPxTick = maxPxTick; this.revPxTick = revPxTick;
     this.gearSpeed = { "-2": -revPxTick, "-1": -revPxTick * 0.5, "0": 0, "1": maxPxTick * 0.15, "2": maxPxTick * 0.30, "3": maxPxTick * 0.50, "4": maxPxTick * 0.68, "5": maxPxTick * 0.85, "6": maxPxTick };
@@ -502,10 +502,10 @@ class Tank extends Item {
 
   /* ───── Groupe motopropulseur ───── */
   /* accélération disponible (m/s²) à la vitesse v (m/s) : couple limité à bas régime, puissance constante ensuite */
-  _driveAcc(v, em) { return Math.max(0.04, Math.min(this._aMax, this._pw * em / Math.max(v, 1.2)) - (0.35 + 0.0012 * v * v)); }
+  _driveAcc(v, em) { return Math.max(0.04, Math.min(this._aMax, this._pw * em / Math.max(v, 1.2)) - (0.25 + 0.0008 * v * v)); }
   /* marche libre : roulement + frein moteur, plus fort à haute vitesse */
   _coast() {
-    const v = Math.abs(this.speed) * 3.333, d = (1.1 + 0.0016 * v * v) * 0.005;
+    const v = Math.abs(this.speed) * 3.333, d = (1.6 + 0.002 * v * v) * 0.005;
     this._brk = Math.max(0, this._brk - 0.1);
     this.speed = Math.abs(this.speed) <= d ? 0 : this.speed - Math.sign(this.speed) * d;
   }
@@ -517,7 +517,7 @@ class Tank extends Item {
     const sp = this.speed;
     if (Math.abs(target) < 1e-4) return this._coast();
     if (sp !== 0 && Math.sign(sp) !== Math.sign(target)) {                         // inversion : on freine d'abord
-      const d = (1.6 + 1.2 * this._brk) * 0.005; this._brk = Math.min(1, this._brk + 0.05);
+      const d = (2.8 + 2.0 * this._brk) * 0.005; this._brk = Math.min(1, this._brk + 0.08);
       this.speed = Math.abs(sp) <= d ? 0 : sp - Math.sign(sp) * d; return;
     }
     const dir = Math.sign(target) || 1, rev = dir < 0 ? 0.7 : 1;
@@ -525,14 +525,14 @@ class Tank extends Item {
       this.speed = sp + dir * this._driveAcc(v, em) * rev * 0.005;
       if (Math.abs(this.speed) > Math.abs(target)) this.speed = target;
     } else {                                                                        // on lève le pied : frein moteur
-      const d = (1.3 + 0.0016 * v * v) * 0.005;
+      const d = (1.8 + 0.002 * v * v) * 0.005;
       this.speed = Math.abs(sp) - Math.abs(target) <= d ? target : sp - dir * d;
     }
   }
   /* freinage de service : monte progressivement, bloque le char à l'arrêt */
   brake() {
-    this._driven = true; this._brk = Math.min(1, this._brk + 0.07);
-    const sp = this.speed, d = (1.4 + 2.0 * this._brk) * 0.005;
+    this._driven = true; this._brk = Math.min(1, this._brk + 0.12);
+    const sp = this.speed, d = (2.4 + 3.2 * this._brk) * 0.005;
     this.speed = Math.abs(sp) <= d ? 0 : sp - Math.sign(sp) * d;
     if (this.speed === 0) this.gear = 0;
   }
@@ -541,7 +541,7 @@ class Tank extends Item {
   _slide(dA) {
     const f = this.speed, l = this.lat, c = Math.cos(dA), sn = Math.sin(dA);
     this.speed = f * c + l * sn; this.lat = l * c - f * sn;
-    const mu = inShallowWater(this.x, this.y) ? 0.4 : 0.7, d = mu * 9.81 * 0.005;     // adhérence latérale (px/tick²)
+    const mu = inShallowWater(this.x, this.y) ? 0.4 : 0.85, d = mu * 9.81 * 0.005;     // adhérence latérale (px/tick²)
     this.lat = Math.abs(this.lat) <= d ? 0 : this.lat - Math.sign(this.lat) * d;
     this.speed *= 1 - Math.abs(this.lat) * 0.004;                                    // le patinage freine
     if (this._flipT > 0) return;
@@ -577,11 +577,11 @@ class Tank extends Item {
     let s = clamp(this._steerIn, -1, 1); this._steerIn = 0;
     if (!this.modules.engine || this.engineHealth <= 0) s = 0;
     if (!L && R && s < 0) s = 0; else if (L && !R && s > 0) s = 0;                  // ne peut pivoter que du côté de la chenille valide
-    const lim = this._yawMax * (0.5 + 0.5 * em) * one * (1 - 0.1 * Math.min(1, v / vmax)) / 60;   // rad/tick
+    const lim = this._yawMax * (0.5 + 0.5 * em) * one * (1 - 0.15 * Math.min(1, v / vmax)) / 60;   // rad/tick
     const a = this._yawMax / 60 / (this._yawT * 60) * (0.5 + 0.5 * em) * one;       // rad/tick²
     const w = this.angularVelocity, tgt = s * lim;
     if (s !== 0) this.angularVelocity = w + clamp(tgt - w, -a * (Math.sign(w) !== Math.sign(tgt) && w !== 0 ? 1.8 : 1), a * (Math.sign(w) !== Math.sign(tgt) && w !== 0 ? 1.8 : 1));
-    else this.angularVelocity = Math.abs(w) <= a * 1.5 ? 0 : w - Math.sign(w) * a * 1.5;       // frottement latéral du sol
+    else this.angularVelocity = Math.abs(w) <= a * 2 ? 0 : w - Math.sign(w) * a * 2;       // frottement latéral du sol
   }
   /* Commande d'IA / manette : accélérateur et braquage normalisés (−1..1) */
   drive(throttle, steer) {

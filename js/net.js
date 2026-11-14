@@ -71,10 +71,11 @@ const Net = (function () {
       try { ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + server); } catch (e) { return reject(new Error("Adresse du serveur invalide : " + server)); }
       const to = setTimeout(() => fail("Serveur multijoueur injoignable (" + server + "). Lancez « node server.js » sur le PC hôte."), 6000);
       N.ws = ws;
-      ws.onopen = () => send({ t: "join", name: localStorage.getItem("PlayerName") || "Joueur", key: selectedKey, cfg: { theme: MAP_THEME, allies: ARENA_CFG.allies, enemies: ARENA_CFG.enemies, difficulty: ARENA_CFG.difficulty, scoreToWin: ARENA_CFG.scoreToWin, respawnBots: ARENA_CFG.respawnBots } });
+      ws.onopen = () => send({ t: "enter", cid: localStorage.getItem("MpCid") || "", room: ARENA_CFG.net && ARENA_CFG.net.room, name: localStorage.getItem("PlayerName") || "Joueur", key: selectedKey });
       ws.onerror = () => fail("Connexion impossible à " + server);
       ws.onmessage = ev => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (m.t === "err" && !done) return fail(m.msg || "Refusé par le serveur");
         if (m.t === "welcome" && !done) {
           done = true; clearTimeout(to);
           N.id = m.id; N.team = m.team; N.host = m.host; N.hostId = m.hostId; N.cfg = m.cfg || {}; N.welcome = m; N.on = true;
@@ -85,7 +86,9 @@ const Net = (function () {
             ws.onclose = null; ws.close(); location.reload(); return;
           }
           sessionStorage.removeItem("netReload");
-          if (!N.host) { for (const k of ["allies", "enemies", "difficulty", "scoreToWin", "respawnBots"]) if (N.cfg[k] !== undefined) ARENA_CFG[k] = N.cfg[k]; }
+          { const mine = N.team === "B" ? "botsB" : "botsA", other = N.team === "B" ? "botsA" : "botsB";   // les bots d'une équipe sont ses alliés
+            if (N.cfg[mine] !== undefined) ARENA_CFG.allies = N.cfg[mine]; if (N.cfg[other] !== undefined) ARENA_CFG.enemies = N.cfg[other];
+            for (const k of ["difficulty", "scoreToWin", "respawnBots", "caps"]) if (N.cfg[k] !== undefined) ARENA_CFG[k] = N.cfg[k]; }
           resolve(m);
         } else onMsg(m);
       };
@@ -129,6 +132,8 @@ const Net = (function () {
       case "leave": { const t = N.peers.get(m.id); if (t) note((t._playerName || "Un joueur") + " a quitté la partie"); dropPeer(m.id); break; }
       case "bots": for (const b of m.l || []) addPeer(b); if (m.sc && !N.host) { teamScore.A = m.sc.A; teamScore.B = m.sc.B; } break;
       case "host": N.hostId = m.id; if (m.id === N.id) becomeHost(); break;
+      case "err": note(m.msg || "Erreur du serveur"); break;
+      case "kicked": note(m.why || "Vous avez quitté le salon"); break;
       case "s": for (const e of m.l) {
         const t = N.peers.get(e[0]); if (!t || t.destroyed || !t.remote) continue;
         const s = { x: e[1], y: e[2], a: e[3], tu: e[4], el: e[5] * 180 / Math.PI, sp: e[6], hp: e[8] };
