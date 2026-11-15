@@ -76,3 +76,33 @@ Démarrer* l'utilise à la place de ssh (rien d'autre à installer). `tunnel.bat
 
 ### Hébergement gratuit, sans rien installer sur les PC
 Voir `HEBERGER_GRATUITEMENT.md` (Render + GitHub) : les joueurs ouvrent simplement une adresse dans leur navigateur.
+
+### Multijoueur : salons, équipes, contrôle par l'hôte (v4)
+Combat → Multijoueur ouvre la liste des **salons actifs** (hôte, carte, joueurs, équipes, bots, règles), la liste des
+**joueurs en ligne** (au QG / dans un salon / en partie) et un formulaire de création. Dans un salon :
+- **Choix de l'équipe** : à l'entrée (Rejoindre A / B) puis bouton « → A / → B ». L'hôte choisit la règle : *Libre* (chacun
+  choisit, moitié des places par équipe), *Automatique* (équilibrage par le serveur) ou *Placées par l'hôte*.
+- **Qui contrôle quoi** : l'hôte (👑) règle la carte, le nombre de bots de chaque équipe, la difficulté, le score, les zones de
+  capture, la réapparition des bots, l'entrée en cours de partie, le nombre de joueurs, le mot de passe, expulse, transmet l'hôte
+  et lance la partie. Les autres voient ces options verrouillées (🔒) et gèrent leur char, leur équipe (si autorisé), « prêt » et le chat.
+- Après la partie, tout le monde retrouve le salon ; l'hôte peut relancer sans recréer.
+- Corrige le bug d'équipe : un joueur placé en équipe B est maintenant créé en équipe B (et non A) et les bots alliés suivent
+  l'équipe du joueur ; le score affiché met toujours « mon équipe » à gauche.
+
+### Déplacements des chars (v4)
+Accélération, freinage, adhérence et surtout vitesse de rotation retravaillés (rotation sur place d'un char moyen : ~40°/s
+atteints en 0,5 s au lieu de ~23°/s en 1,4 s ; 0→30 km/h en ~3,5 s au lieu de ~6 s ; freinage 30→0 en 1,5 s). Les chars lourds
+restent plus lents que les légers, mais ne donnent plus l'impression de « glisser dans la mélasse ».
+
+### Comptes, sauvegarde en ligne et amis (v5)
+Menu **Compte** : créez un compte (pseudo + mot de passe, aucun e-mail) et votre progression — XP, chars recherchés, statistiques,
+succès, chars de l'Atelier — se retrouve sur n'importe quel ordinateur ou navigateur.
+- **Synchronisation automatique** quelques secondes après chaque partie ou recherche, et à la fermeture de la page.
+- **Jamais d'écrasement silencieux** : si un autre appareil a sauvegardé entre-temps, le jeu vous demande quelle version garder.
+- **Ordinateur partagé** : « Déconnexion + effacer ce PC » retire la progression locale (elle reste sur le compte).
+- **Amis** : demandes à accepter, état en ligne (au QG / dans un salon / en partie) et bouton « Rejoindre » vers le salon d'un ami.
+- Pseudos **protégés** : un invité ne peut pas prendre le pseudo d'un compte ; le nom du compte s'affiche dans les salons (✔).
+- Sécurité : mots de passe hachés (scrypt), jetons de session de 60 jours, limitation des tentatives, suppression du compte possible.
+- Sans compte : exportation / importation d'un fichier de progression (menu Compte).
+- Stockage : Upstash Redis (gratuit) si les variables `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` sont définies,
+  sinon fichier `data/db.json`. Voir `HEBERGER_GRATUITEMENT.md`.

@@ -39,26 +39,26 @@ const teamCap = r => Math.ceil(r.cfg.maxPlayers / 2);
 const autoTeam = r => { const c = teamCounts(r); return c.A <= c.B ? "A" : "B"; };
 const byMid = (r, mid) => { for (const m of r.members.values()) if (m.mid === mid) return m; return null; };
 function findMemberRoom(cid) { for (const r of rooms.values()) { const m = r.members.get(cid); if (m) return [r, m]; } return [null, null]; }
-const memberPub = (r, m) => ({ mid: m.mid, name: m.name, key: m.key, team: m.team, ready: m.ready, online: !!m.sock, inGame: !!m.inGame, host: m.cid === r.hostCid });
+const memberPub = (r, m) => ({ mid: m.mid, acct: !!m.acct, name: m.name, key: m.key, team: m.team, ready: m.ready, online: !!m.sock, inGame: !!m.inGame, host: m.cid === r.hostCid });
 const roomPub = (r, full) => ({ id: r.id, name: r.name, locked: !!r.pass, state: r.state, round: r.round, cfg: r.cfg, members: [...r.members.values()].map(m => memberPub(r, m)), chat: full ? r.chat.slice(-40) : undefined });
 function roomSummary(r) {
   const h = r.members.get(r.hostCid), c = teamCounts(r);
   return { id: r.id, name: r.name, locked: !!r.pass, state: r.state, host: h ? h.name : "?", players: r.members.size, online: [...r.members.values()].filter(m => m.sock).length, max: r.cfg.maxPlayers, theme: r.cfg.theme, botsA: r.cfg.botsA, botsB: r.cfg.botsB, teamMode: r.cfg.teamMode, a: c.A, b: c.B, difficulty: r.cfg.difficulty, score: r.cfg.scoreToWin, late: r.cfg.allowLate };
 }
 const gameCfg = r => ({ theme: r.cfg.theme, botsA: r.cfg.botsA, botsB: r.cfg.botsB, difficulty: r.cfg.difficulty, scoreToWin: r.cfg.scoreToWin, respawnBots: r.cfg.respawnBots, caps: r.cfg.caps });
-function touchPresence(cid, name, c) { const p = presence.get(cid) || { cid }; p.name = name; p.seen = Date.now(); if (c) p.c = c; presence.set(cid, p); }
+function touchPresence(cid, name, c, acct) { const p = presence.get(cid) || { cid }; if (acct) { p.acct = acct.low; p.name = acct.name; } else if (!p.acct) p.name = name; p.seen = Date.now(); if (c) p.c = c; presence.set(cid, p); }
 function lobbyOnline() {
   const out = [], now = Date.now();
   for (const p of presence.values()) {
     const live = p.c && p.c.sock && !p.c.sock.destroyed;
     if (!live && now - p.seen > 9000) continue;
     const [r, m] = findMemberRoom(p.cid);
-    out.push({ name: p.name, room: r ? r.name : null, where: r ? (m.inGame ? "En partie" : "Dans un salon") : "Au QG", host: !!(r && r.hostCid === p.cid) });
+    out.push({ name: p.name, acct: !!p.acct, room: r ? r.name : null, where: r ? (m.inGame ? "En partie" : "Dans un salon") : "Au QG", host: !!(r && r.hostCid === p.cid) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
-function lobbyInfo(cid, name) {
-  if (cid) touchPresence(cid, clean(name, 16) || "Joueur");
+function lobbyInfo(cid, name, acct) {
+  if (cid) touchPresence(cid, clean(name, 16) || "Joueur", null, acct);
   const list = [...rooms.values()].sort((a, b) => (a.state === "playing") - (b.state === "playing") || b.created - a.created).map(roomSummary);
   return { rooms: list, online: lobbyOnline(), uptime: Math.round(process.uptime()) };
 }
@@ -86,7 +86,7 @@ function electSimHost(r) {
 }
 function attach(c, r, me, inGame) { me.sock = c.sock; me.left = 0; me.inGame = inGame; c.room = r; c.me = me; c.inGame = inGame; }
 function addMember(r, c, m, team) {
-  const me = { cid: c.cid, mid: "m" + (++midSeq), name: c.name, key: clean(m.key, 60), team, ready: false, sock: c.sock, inGame: false, pid: null, left: 0, joined: Date.now() };
+  const me = { cid: c.cid, mid: "m" + (++midSeq), name: c.name, acct: !!c.acct, key: clean(m.key, 60), team, ready: false, sock: c.sock, inGame: false, pid: null, left: 0, joined: Date.now() };
   r.members.set(c.cid, me); if (r.state === "playing") { me.pid = "p" + (++pidSeq); r.byPid.set(me.pid, me); }
   c.room = r; c.me = me; c.inGame = false; return me;
 }
@@ -97,6 +97,201 @@ setInterval(() => {                       // ménage : membres hors-ligne depuis
   for (const r of [...rooms.values()]) for (const m of [...r.members.values()]) if (!m.sock && m.left && now - m.left > OFFLINE_GRACE) removeMember(r, m, null);
   for (const [k, p] of presence) if (now - p.seen > 60000 && !(p.c && p.c.sock && !p.c.sock.destroyed)) presence.delete(k);
 }, 5000).unref();
+
+/* ───── Comptes, sauvegardes et amis ─────
+   Stockage : Upstash Redis (gratuit) si UPSTASH_REDIS_REST_URL et UPSTASH_REDIS_REST_TOKEN sont définies,
+   sinon fichier data/db.json (OK en local ; sur Render gratuit le disque est effacé à chaque redémarrage).
+   Données gardées : pseudo, mot de passe HACHÉ (scrypt), liste d'amis, sauvegarde de progression. Aucun e-mail.
+   Clés : ta:u:<pseudo> (compte) · ta:s:<pseudo> (sauvegarde) · ta:t:<jeton> (session, 60 jours). */
+const DATA_DIR = process.env.TA_DATA_DIR || path.join(ROOT, "data");
+const UP_URL = (process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/+$/, ""), UP_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
+const DB = (function () {
+  const useUp = !!(UP_URL && UP_TOKEN && typeof fetch === "function"), cache = new Map(), file = path.join(DATA_DIR, "db.json");
+  let fileData = null, saveT = null;
+  async function up(cmd) {
+    let r, j;
+    try { r = await fetch(UP_URL, { method: "POST", headers: { Authorization: "Bearer " + UP_TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(cmd) }); j = await r.json(); }
+    catch (e) { const x = new Error("Base de données injoignable"); x.db = true; throw x; }
+    if (!r.ok || j.error) { const x = new Error("Base de données : " + (j.error || "HTTP " + r.status)); x.db = true; throw x; }
+    return j.result;
+  }
+  const loadFile = () => { if (fileData) return; try { fileData = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { fileData = {}; } };
+  const writeNow = () => { if (!dirty) return; dirty = false; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(file + ".tmp", JSON.stringify(fileData)); fs.renameSync(file + ".tmp", file); } catch (e) { console.error("[db] écriture impossible :", e.message); } };
+  let dirty = false;
+  const flush = () => { dirty = true; clearTimeout(saveT); saveT = setTimeout(writeNow, 300); };
+  if (!useUp) for (const sg of ["SIGTERM", "SIGINT"]) process.on(sg, () => { writeNow(); process.exit(0); });   // arrêt (redéploiement Render, Ctrl+C) : on n'oublie aucune écriture
+  process.on("exit", writeNow);
+  return {
+    kind: useUp ? "upstash" : "fichier",
+    async get(k, nocache) { if (!nocache && cache.has(k)) return cache.get(k); let v; if (useUp) v = await up(["GET", k]); else { loadFile(); v = fileData[k] ?? null; } if (!nocache) cache.set(k, v); return v; },
+    async set(k, v, ex, nocache) { if (!nocache) cache.set(k, v); if (useUp) await up(ex ? ["SET", k, v, "EX", ex] : ["SET", k, v]); else { loadFile(); fileData[k] = v; flush(); } },
+    async del(k) { cache.delete(k); if (useUp) await up(["DEL", k]); else { loadFile(); delete fileData[k]; flush(); } }
+  };
+})();
+if (DB.kind === "fichier") console.log("  Comptes : stockage dans " + path.join(DATA_DIR, "db.json") + "  (pour une sauvegarde durable en ligne, voir HEBERGER_GRATUITEMENT.md : Upstash)");
+else console.log("  Comptes : stockage Upstash Redis ✔");
+
+const NAME_RE = /^[A-Za-z0-9_-]{3,16}$/, RESERVED = new Set(["admin", "administrateur", "moderateur", "modo", "serveur", "server", "system", "systeme", "invite", "guest", "root", "anthropic", "claude"]);
+const SAVE_KEYS = /^(XP|XPEarned|SelectedTank|SelectedAmmo1|SelectedAmmo2|researchOrient|match_history|customTankDesigns|customTankActive|researched_.+|claimed_.+|camp_completed_.+|stat_.+)$/;
+const SAVE_MAX = 380000, FRIENDS_MAX = 50, REQ_MAX = 30, SESSION_S = 60 * 86400;
+const sessCache = new Map();                          // jeton → { n: pseudo (minuscules), e: expiration }
+const hits = new Map();                               // limiteur : clé → [horodatages]
+function limited(key, max, ms) { const now = Date.now(), a = (hits.get(key) || []).filter(t => now - t < ms); if (a.length >= max) { hits.set(key, a); return true; } a.push(now); hits.set(key, a); return false; }
+setInterval(() => { const now = Date.now(); for (const [k, a] of hits) if (!a.some(t => now - t < 3600000)) hits.delete(k); for (const [k, v] of sessCache) if (v.e < now) sessCache.delete(k); }, 600000).unref();
+let chain = Promise.resolve();
+const serial = fn => { const p = chain.then(fn); chain = p.catch(() => { }); return p; };      // modifications de comptes une par une (pas de course entre deux amis)
+const scrypt = (pw, salt) => new Promise((res, rej) => crypto.scrypt(pw, salt, 32, { N: 16384, r: 8, p: 1 }, (e, k) => e ? rej(e) : res(k)));
+const ipOf = req => String((req.headers["x-forwarded-for"] || "").split(",")[0] || req.socket.remoteAddress || "?").trim();
+const json = (res, code, obj) => { res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" }); res.end(JSON.stringify(obj)); };
+function readBody(req, max) {
+  return new Promise((resolve, reject) => {
+    let n = 0; const chunks = [];
+    req.on("data", c => { n += c.length; if (n > max) { reject(Object.assign(new Error("Corps trop gros"), { code: 413 })); req.destroy(); } else chunks.push(c); });
+    req.on("end", () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {}); } catch (e) { reject(Object.assign(new Error("JSON invalide"), { code: 400 })); } });
+    req.on("error", reject);
+  });
+}
+const sessAcct = low => { const v = userCache.get(low); return v ? { low, name: v } : { low, name: low }; };
+const userCache = new Map();
+const getUser = async low => { const v = await DB.get("ta:u:" + low); const u = v ? JSON.parse(v) : null; if (u) userCache.set(low, u.name); return u; };
+const putUser = u => DB.set("ta:u:" + u.name.toLowerCase(), JSON.stringify(u));
+const pubUser = u => ({ name: u.name, created: u.created, last: u.last, friends: u.friends.length });
+async function newSession(low) { const tok = crypto.randomBytes(32).toString("hex"), rec = { n: low, e: Date.now() + SESSION_S * 1000 }; sessCache.set(tok, rec); await DB.set("ta:t:" + tok, JSON.stringify(rec), SESSION_S); return tok; }
+async function resolveToken(tok) {
+  tok = String(tok || ""); if (!/^[a-f0-9]{64}$/.test(tok)) return null;
+  let rec = sessCache.get(tok);
+  if (!rec) { const v = await DB.get("ta:t:" + tok, true); if (!v) return null; try { rec = JSON.parse(v); } catch (e) { return null; } sessCache.set(tok, rec); }
+  if (rec.e < Date.now()) { sessCache.delete(tok); return null; }
+  return rec.n;
+}
+const bearer = req => { const h = String(req.headers.authorization || ""); return h.startsWith("Bearer ") ? h.slice(7).trim() : ""; };
+const authNameSync = req => { const r = sessCache.get(bearer(req)); return r && r.e > Date.now() ? r.n : null; };
+async function isRegistered(low) { try { return !!(await DB.get("ta:u:" + low)); } catch (e) { return false; } }
+
+function friendView(low) {                            // état « en ligne » d'un compte d'après les présences
+  for (const p of presence.values()) {
+    if (p.acct !== low) continue; const live = p.c && p.c.sock && !p.c.sock.destroyed; if (!live && Date.now() - p.seen > 9000) continue;
+    const [r, m] = findMemberRoom(p.cid);
+    return { online: true, where: r ? (m.inGame ? "En partie" : "Dans un salon") : "Au QG", room: r ? { id: r.id, name: r.name, locked: !!r.pass, state: r.state, full: r.members.size >= r.cfg.maxPlayers } : null };
+  }
+  return { online: false, where: "Hors ligne", room: null };
+}
+async function friendsPayload(u) {
+  const out = [];
+  for (const low of u.friends) { const f = await getUser(low); if (f) out.push(Object.assign({ name: f.name, last: f.last }, friendView(low))); }
+  out.sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name));
+  const nm = async list => (await Promise.all(list.map(async l => { const f = await getUser(l); return f ? f.name : null; }))).filter(Boolean);
+  return { friends: out, incoming: await nm(u.inReq), outgoing: await nm(u.outReq) };
+}
+
+const ACC_ROUTES = new Set(["/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/password", "/api/auth/delete", "/api/me", "/api/save", "/api/friends", "/api/friends/add", "/api/friends/respond", "/api/friends/remove"]);
+function apiAccounts(req, res, url) {
+  if (!ACC_ROUTES.has(url)) return false;
+  if (req.method === "OPTIONS") { res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS", "Access-Control-Max-Age": "600" }); res.end(); return true; }
+  handleAcc(req, res, url).catch(e => {
+    if (e.code === 413) return json(res, 413, { error: "Données trop volumineuses." }); if (e.code === 400) return json(res, 400, { error: "Requête invalide." });
+    console.error("[comptes]", e.message); json(res, e.db ? 503 : 500, { error: e.db ? "Le stockage des comptes est indisponible pour le moment. Réessayez dans un instant." : "Erreur du serveur." });
+  });
+  return true;
+}
+async function handleAcc(req, res, url) {
+  const M = req.method, ip = ipOf(req);
+  /* ── inscription / connexion (sans jeton) ── */
+  if (url === "/api/auth/register" && M === "POST") {
+    if (limited("reg:" + ip, 8, 3600000)) return json(res, 429, { error: "Trop d'inscriptions depuis cette connexion. Réessayez plus tard." });
+    const b = await readBody(req, 2000), name = String(b.name || "").trim(), pass = String(b.pass || "");
+    if (!NAME_RE.test(name)) return json(res, 400, { error: "Pseudo : 3 à 16 caractères (lettres, chiffres, - et _)." });
+    if (RESERVED.has(name.toLowerCase())) return json(res, 400, { error: "Ce pseudo est réservé." });
+    if (pass.length < 6 || pass.length > 100) return json(res, 400, { error: "Mot de passe : 6 caractères minimum." });
+    const salt = crypto.randomBytes(16), hash = await scrypt(pass, salt);
+    const r = await serial(async () => {
+      if (await getUser(name.toLowerCase())) return null;
+      const u = { name, salt: salt.toString("hex"), hash: hash.toString("hex"), created: Date.now(), last: Date.now(), friends: [], inReq: [], outReq: [], save: null };
+      await putUser(u); return u;
+    });
+    if (!r) return json(res, 409, { error: "Ce pseudo est déjà pris." });
+    console.log("[compte] créé : " + name); return json(res, 200, { token: await newSession(name.toLowerCase()), user: pubUser(r) });
+  }
+  if (url === "/api/auth/login" && M === "POST") {
+    const b = await readBody(req, 2000), name = String(b.name || "").trim().toLowerCase(), pass = String(b.pass || "");
+    if (limited("log:" + ip, 20, 600000) || limited("logn:" + name, 8, 600000)) return json(res, 429, { error: "Trop de tentatives. Réessayez dans quelques minutes." });
+    const u = NAME_RE.test(name) ? await getUser(name) : null; let ok = false;
+    if (u) { const h = await scrypt(pass, Buffer.from(u.salt, "hex")), ref = Buffer.from(u.hash, "hex"); ok = h.length === ref.length && crypto.timingSafeEqual(h, ref); } else await scrypt(pass, Buffer.alloc(16));
+    if (!ok) return json(res, 401, { error: "Pseudo ou mot de passe incorrect." });
+    u.last = Date.now(); await putUser(u); return json(res, 200, { token: await newSession(name), user: pubUser(u) });
+  }
+  /* ── tout le reste exige un jeton ── */
+  const tok = bearer(req), low = await resolveToken(tok);
+  if (!low) return json(res, 401, { error: "Session expirée : reconnectez-vous.", auth: false });
+  const me = await getUser(low); if (!me) return json(res, 401, { error: "Compte introuvable.", auth: false });
+  if (url === "/api/auth/logout" && M === "POST") { sessCache.delete(tok); await DB.del("ta:t:" + tok); return json(res, 200, { ok: true }); }
+  if (url === "/api/me" && M === "GET") return json(res, 200, { user: pubUser(me), save: me.save, storage: DB.kind, persistent: DB.kind === "upstash" });
+  if (url === "/api/auth/delete" && M === "POST") {                // suppression complète du compte et de ses données
+    const b = await readBody(req, 2000), pass = String(b.pass || "");
+    if (limited("del:" + low, 5, 600000)) return json(res, 429, { error: "Trop de tentatives." });
+    const h = await scrypt(pass, Buffer.from(me.salt, "hex")), ref = Buffer.from(me.hash, "hex");
+    if (!(h.length === ref.length && crypto.timingSafeEqual(h, ref))) return json(res, 401, { error: "Mot de passe incorrect." });
+    await serial(async () => {
+      const u = await getUser(low); if (!u) return;
+      for (const o of new Set([...u.friends, ...u.inReq, ...u.outReq])) { const f = await getUser(o); if (!f) continue; for (const k of ["friends", "inReq", "outReq"]) { const i = f[k].indexOf(low); if (i >= 0) f[k].splice(i, 1); } await putUser(f); }
+      await DB.del("ta:u:" + low); await DB.del("ta:s:" + low); userCache.delete(low);
+    });
+    sessCache.delete(tok); await DB.del("ta:t:" + tok); console.log("[compte] supprimé : " + me.name); return json(res, 200, { ok: true });
+  }
+  if (url === "/api/auth/password" && M === "POST") {
+    const b = await readBody(req, 2000), old = String(b.old || ""), pass = String(b.pass || "");
+    if (limited("pw:" + low, 6, 600000)) return json(res, 429, { error: "Trop de tentatives." });
+    if (pass.length < 6 || pass.length > 100) return json(res, 400, { error: "Nouveau mot de passe : 6 caractères minimum." });
+    const h = await scrypt(old, Buffer.from(me.salt, "hex")), ref = Buffer.from(me.hash, "hex");
+    if (!(h.length === ref.length && crypto.timingSafeEqual(h, ref))) return json(res, 401, { error: "Mot de passe actuel incorrect." });
+    const salt = crypto.randomBytes(16); me.salt = salt.toString("hex"); me.hash = (await scrypt(pass, salt)).toString("hex"); await serial(() => putUser(me)); return json(res, 200, { ok: true });
+  }
+  /* ── sauvegarde de progression ── */
+  if (url === "/api/save" && M === "GET") { const v = await DB.get("ta:s:" + low, true); return json(res, 200, v ? JSON.parse(v) : { t: 0, data: null }); }
+  if (url === "/api/save" && M === "PUT") {
+    if (limited("sv:" + low, 40, 600000)) return json(res, 429, { error: "Trop de sauvegardes : patientez un instant." });
+    const b = await readBody(req, 500000), data = b.data;
+    if (!data || typeof data !== "object" || Array.isArray(data)) return json(res, 400, { error: "Sauvegarde invalide." });
+    const clean2 = {}; let size = 0;
+    for (const k of Object.keys(data)) { if (!SAVE_KEYS.test(k) || typeof data[k] !== "string") continue; size += k.length + data[k].length; if (size > SAVE_MAX) return json(res, 413, { error: "Sauvegarde trop volumineuse." }); clean2[k] = data[k]; }
+    return json(res, 200, await serial(async () => {
+      const cur = me.save, base = Number(b.base) || 0;
+      if (cur && cur.t !== base && !b.force) return { conflict: true, server: cur };                   // un autre appareil a sauvegardé entre-temps
+      const t = Date.now(), keys = Object.keys(clean2), xpe = Math.max(parseInt(clean2.XPEarned) || 0, parseInt(clean2.XP) || 0);
+      me.save = { t, bytes: size, xp: parseInt(clean2.XP) || 0, xpe, res: keys.filter(k => k.startsWith("researched_")).length, tank: clean2.SelectedTank || "" };
+      await DB.set("ta:s:" + low, JSON.stringify({ t, data: clean2 }), 0, true); await putUser(me);
+      return { ok: true, t, save: me.save };
+    }));
+  }
+  /* ── amis ── */
+  if (url === "/api/friends" && M === "GET") return json(res, 200, await friendsPayload(me));
+  if (M === "POST" && (url === "/api/friends/add" || url === "/api/friends/respond" || url === "/api/friends/remove")) {
+    const b = await readBody(req, 1000), tl = String(b.name || "").trim().toLowerCase();
+    if (!NAME_RE.test(tl) || tl === low) return json(res, 400, { error: "Pseudo invalide." });
+    if (limited("fr:" + low, 60, 600000)) return json(res, 429, { error: "Trop d'actions : patientez un instant." });
+    const r = await serial(async () => {
+      const a = await getUser(low), t = await getUser(tl); if (!t) return { code: 404, error: "Aucun joueur nommé « " + String(b.name).slice(0, 16) + " »." };
+      const rm = (arr, x) => { const i = arr.indexOf(x); if (i >= 0) arr.splice(i, 1); }, add = (arr, x) => { if (!arr.includes(x)) arr.push(x); };
+      if (url === "/api/friends/add") {
+        if (a.friends.includes(tl)) return { msg: "Déjà dans vos amis." };
+        if (a.friends.length >= FRIENDS_MAX) return { code: 400, error: "Liste d'amis pleine (" + FRIENDS_MAX + ")." };
+        if (a.inReq.includes(tl)) { rm(a.inReq, tl); rm(t.outReq, low); add(a.friends, tl); add(t.friends, low); await putUser(a); await putUser(t); return { msg: t.name + " est maintenant votre ami." }; }
+        if (a.outReq.includes(tl)) return { msg: "Demande déjà envoyée." };
+        if (a.outReq.length >= REQ_MAX || t.inReq.length >= REQ_MAX) return { code: 400, error: "Trop de demandes en attente." };
+        add(a.outReq, tl); add(t.inReq, low); await putUser(a); await putUser(t); return { msg: "Demande envoyée à " + t.name + "." };
+      }
+      if (url === "/api/friends/respond") {
+        if (!a.inReq.includes(tl)) return { code: 400, error: "Aucune demande de ce joueur." };
+        rm(a.inReq, tl); rm(t.outReq, low); if (b.accept) { add(a.friends, tl); add(t.friends, low); }
+        await putUser(a); await putUser(t); return { msg: b.accept ? t.name + " est maintenant votre ami." : "Demande refusée." };
+      }
+      rm(a.friends, tl); rm(t.friends, low); rm(a.outReq, tl); rm(t.inReq, low); rm(a.inReq, tl); rm(t.outReq, low); await putUser(a); await putUser(t); return { msg: "Ami retiré." };
+    });
+    if (r.error) return json(res, r.code || 400, { error: r.error });
+    return json(res, 200, Object.assign({ msg: r.msg }, await friendsPayload(await getUser(low))));
+  }
+  return json(res, 404, { error: "Route inconnue." });
+}
 
 /* ───── Tunnel public (ssh → localhost.run), piloté depuis Réglages → Multijoueur ───── */
 const tunnel = { state: "off", url: null, error: null, proc: null, timer: null, stopping: false };
@@ -161,9 +356,10 @@ const server = http.createServer((req, res) => {
   let url = decodeURIComponent((req.url || "/").split("?")[0]);
   if (url === "/api/lobby" || url === "/api/room") {      // liste des salons + joueurs en ligne (le lobby l'interroge toutes les ~2,5 s)
     const q = new URLSearchParams((req.url.split("?")[1]) || "");
-    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
-    return res.end(JSON.stringify(lobbyInfo(clean(q.get("cid"), 40), q.get("name"))));
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization" });
+    const an = authNameSync(req); return res.end(JSON.stringify(lobbyInfo(clean(q.get("cid"), 40), q.get("name"), an && sessAcct(an))));
   }
+  if (apiAccounts(req, res, url)) return;
   if (url === "/api/tunnel") {
     const local = isLocalReq(req);
     if (req.method === "POST" || req.method === "DELETE") {
@@ -173,7 +369,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify({ state: tunnel.state, url: tunnel.url, error: tunnel.error, kind: tunnel.kind || (findCloudflared() ? "cloudflare" : "ssh"), canControl: local, lan: lanAddrs(), port: PORT }));
   }
-  if (url === "/api/health") { const miss = missingFiles(); res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ok: miss.length === 0, missing: miss, root: path.basename(ROOT) })); }
+  if (url === "/api/health") { const miss = missingFiles(); res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ok: miss.length === 0, missing: miss, root: path.basename(ROOT), accounts: DB.kind, persistent: DB.kind === "upstash" })); }
   if (url === "/") url = "/lobby.html";
   const file = path.normalize(path.join(ROOT, url));
   if (!file.startsWith(ROOT) || /(^|[\\/])\.|node_modules/.test(path.relative(ROOT, file))) { res.writeHead(403); return res.end("Interdit"); }
@@ -302,6 +498,16 @@ function onGone(c) {
   pushRoom(r);
 }
 
+async function helloAsync(c, m) {
+  const cid = clean(m.cid, 40); if (!cid) return; let name = clean(m.name, 16) || "Joueur", acct = null;
+  if (m.token) { try { const low = await resolveToken(m.token); if (low) { const u = await getUser(low); if (u) acct = { low, name: u.name }; } } catch (e) { } }
+  if (acct) name = acct.name; else if (await isRegistered(name.toLowerCase())) name = name.slice(0, 11) + " (inv.)";   // un invité ne peut pas usurper le pseudo d'un compte
+  c.cid = cid; c.acct = acct ? acct.low : null; c.name = name; touchPresence(cid, name, c, acct);
+  const [r, me] = findMemberRoom(cid);
+  if (r && me) { attach(c, r, me, false); me.name = name; me.acct = !!acct; sendTo(c.sock, { t: "room", room: roomPub(r, true), you: me.mid }); pushRoom(r); }
+  else sendTo(c.sock, { t: "hi", acct: acct ? acct.name : null });
+}
+
 function onMessage(c, m) {
   const t = m.t, sock = c.sock;
   /* ── en jeu : relais entre les joueurs du salon ── */
@@ -315,24 +521,17 @@ function onMessage(c, m) {
     return;
   }
   /* ── identification ── */
-  if (t === "hello") {
-    c.cid = clean(m.cid, 40); c.name = clean(m.name, 16) || "Joueur"; if (!c.cid) return;
-    touchPresence(c.cid, c.name, c);
-    const [r, me] = findMemberRoom(c.cid);
-    if (r && me) { attach(c, r, me, false); me.name = c.name; sendTo(sock, { t: "room", room: roomPub(r, true), you: me.mid }); pushRoom(r); }
-    else sendTo(sock, { t: "hi" });
-    return;
-  }
-  if (t === "enter" && !c.cid) { c.cid = clean(m.cid, 40); c.name = clean(m.name, 16) || "Joueur"; if (c.cid) touchPresence(c.cid, c.name, c); }
+  if (t === "hello") { c.helloP = helloAsync(c, m).catch(e => console.error("[hello]", e.message)).then(() => { c.helloP = null; }); return; }
+  if (c.helloP) { c.helloP.then(() => onMessage(c, m)); return; }          // les messages suivants attendent la fin de l'identification
+  if (t === "enter" && !c.cid) { c.cid = clean(m.cid, 40); c.name = "Joueur"; }
   if (!c.cid) return;
-  if (m.name) { c.name = clean(m.name, 16) || c.name; if (c.me) c.me.name = c.name; }
 
   /* ── entrée en arène (page arena.html) ── */
   if (t === "enter") {
     const r = rooms.get(m.room), me = r && r.members.get(c.cid);
     if (!r || !me) return errTo(c, "Salon introuvable : retournez au QG et rejoignez-le à nouveau.", true);
     if (r.state !== "playing") return errTo(c, "La partie n'est pas lancée.", true);
-    attach(c, r, me, true); me.name = c.name; r.sawGame = true;
+    attach(c, r, me, true); r.sawGame = true; c.name = me.name; { const p = presence.get(c.cid); if (p) { p.c = c; p.seen = Date.now(); } }
     if (!me.pid) { me.pid = "p" + (++pidSeq); r.byPid.set(me.pid, me); }
     const sim = r.simHostCid && r.members.get(r.simHostCid);
     if (!sim || !sim.inGame || sim === me) r.simHostCid = c.cid;
