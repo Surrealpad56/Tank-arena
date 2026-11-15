@@ -5,7 +5,7 @@ Lancer : `python3 -m http.server 8000` dans ce dossier, puis ouvrir `http://loca
 - **Menus** (`lobby.html`) : 01 QG · 02 Combat · 03 Hangar · 04 Recherche · 05 Carrière · 06 Réglages. Toutes les données affichées sont réelles.
 - **Combat** (`arena.html`, Three.js r128) : balistique 3D, blindage par face, modules (équipage, moteur, canon, chenilles, soute).
 - Modes : Entraînement, Escarmouche, Campagne (10 missions par véhicule). Jeu 100 % hors ligne, contre des bots.
-- Contrôles : ZQSD/WASD, Q/E rapport, Espace frein, souris + clic = tir, clic droit/V lunette, 1/2 obus, R réparer, T repérage, M carte, Échap pause.
+- Contrôles : ZQSD/WASD, Q/E rapport, Espace frein, souris + clic = tir, clic droit/V lunette, molette = distance caméra ou zoom de lunette, Maj + molette = zéro, 1/2 obus, R réparer, M carte, Échap pause.
 - Modèles 3D : voir `models/README.md`.
 
 Limites : sol plat (les rochers font office de reliefs), arbres sans collision. Aucune ressource externe (polices système).
@@ -17,7 +17,7 @@ Un obus qui perce le blindage continue dans le char. Chaque char a des modules 3
 - **HE** : explose à l'entrée, éclats dans toutes les directions. **HEAT** : jet étroit + éclats de revêtement.
 - Les éclats sont des rayons qui s'arrêtent sur le premier module dense (un équipier protège ce qui est derrière).
 - Conséquences : équipage hors de combat, moteur/boîte/culasse/tourelle dégradés ou détruits, incendie (extincteur automatique, une seule fois), détonation de soute selon le remplissage (diminue à chaque tir). Un char est perdu s'il reste ≤ 1 membre d'équipage.
-- Affichage : panneau « Modules » (état de votre char), « Rapport » de chaque impact (trajectoire, modules touchés), traceurs 3D et vue radiographique 3D sur le char que vous touchez. Réparation (R à l'arrêt) : chenilles, puis boîte, moteur, culasse, tourelle.
+- Affichage : panneau des modules repliable, rapport détaillé des dégâts reçus importants, journal distinguant les tirs reçus (rouge) des tirs infligés (ambre), traceurs 3D et vue radiographique 3D sur le char touché. Réparation (R à l'arrêt) : chenilles, puis boîte, moteur, culasse, tourelle.
 
 ## Maps (v relief)
 10 théâtres d'opérations en 12000×12000 px avec relief réel : js/map-engine.js (moteur, relief, eau, ponts), js/map-defs.js (les 10 cartes), js/terrain-gen.js (rendu du sol + ombrage du relief). Chars inclinés sur les pentes, obus / vue / caméra tenant compte du terrain, ponts surélevés, pentes >39° infranchissables.
@@ -41,9 +41,14 @@ Renversement : glissement latéral rapide + butée (obstacle, pente, eau peu pro
 ## Zones de touche de l'équipage
 Chaque équipier est une forme composée de 4 boîtes (assis, vu de côté) : tête, buste, haut des jambes, bas des jambes. Tête et buste : hors de combat immédiat. Jambes : blessure (haut 60 %, bas 35 % de vie) ; deux touches ou un obus de 85 mm et plus tuent. Un chargeur blessé recharge plus lentement, un tireur blessé tourne la tourelle moins vite. Le rapport de dégâts et la radiographie 3D affichent la partie touchée.
 
-## Viseur : point d'impact prévu
-Le cercle ambre est le point où l'obus tombera réellement : on rejoue sa trajectoire (traînée, gravité, vent, vitesse du char) depuis l'orientation actuelle du canon, jusqu'au sol, un obstacle ou un char (rouge si c'est un ennemi). Il affiche la distance, reste visible par-dessus la lunette, et se plaque sur le bord de l'écran quand le canon n'est pas encore aligné.
-Lunette sniper : réticule gradué en milliradians (traits tous les 5 ou 10 mil selon le zoom, chiffres tous les 10 ou 20), anneau central coloré selon la pénétration (vert / orange / rouge), bandeau Distance · Élévation · Munition · Zoom, marqueur d'impact en losange. Les panneaux du bas sont atténués en vue sniper.
+## Repérage et visée
+Les ennemis sont détectés progressivement : contact, silhouette, puis identification. Les noms ne s'affichent qu'une fois la cible identifiée; après perte de vue, seule sa dernière position connue reste marquée temporairement.
+
+La petite croix ambre indique le point d'impact calculé par la trajectoire réelle de l'obus (gravité, vent et mouvement du char), jusqu'au sol, un obstacle ou un véhicule. Elle reste visible en vue libre comme dans la lunette et devient rouge si elle vise un ennemi.
+La lunette offre plusieurs niveaux de zoom selon la catégorie du char. Maj + molette règle le zéro (200 à 1000 m); zoom et zéro sont mémorisés par char. Le réticule gradué change de couleur selon la pénétration probable, incertaine ou bloquée.
+
+## Entrée et fin de partie
+L'écran de chargement présente la carte et l'équipe alliée; un écran de déploiement affiche l'objectif et permet d'entrer en combat ou de retourner au QG. En escarmouche et en deathmatch, une courte cinématique précède l'écran de résultats.
 
 ## Nouveautés de cette version
 
