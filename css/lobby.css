@@ -364,3 +364,6 @@ code { background: rgba(255,255,255,.08); padding: 1px 5px; }
 .sl-c { margin: 2px 0; } .sl-c.sys { color: var(--faint, #7c8a94); font-style: italic; } .sl-c .ta { color: #4db4ff; } .sl-c .tb { color: #ff7a6a; }
 .btnrow-sl { margin-top: 10px; }
 .tag.ok { border-color: #6fdc8c; color: #6fdc8c; }
+
+.sl-x { background: none; border: 0; color: var(--faint, #7c8a94); cursor: pointer; font-size: 14px; padding: 0 4px; } .sl-x:hover { color: var(--bad, #ff6b5e); }
+.btn.sm { padding: 4px 10px; font-size: 12px; }
