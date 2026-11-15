@@ -26,7 +26,7 @@ const Salons = (function () {
     if (S.ws && (S.ws.readyState === 0 || S.ws.readyState === 1)) return;
     let ws; try { ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + Multi.server()); } catch (e) { S.ok = false; S.err = "Adresse du serveur invalide."; return; }
     S.ws = ws;
-    ws.onopen = () => { S.ok = true; S.err = null; send({ t: "hello", cid: cid(), name: Store.name() }); draw(); };
+    ws.onopen = () => { S.ok = true; S.err = null; send({ t: "hello", cid: cid(), name: Store.name(), token: Account.token() }); draw(); if (S.pendingJoin) { const f = S.pendingJoin; S.pendingJoin = null; setTimeout(f, 250); } };
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } onMsg(m); };
     ws.onclose = () => { S.ok = false; if (S.ws === ws) S.ws = null; if (alive()) { draw(); clearTimeout(S.retryT); S.retryT = setTimeout(connect, 2500); } };
     ws.onerror = () => { };
@@ -42,7 +42,7 @@ const Salons = (function () {
   }
   async function poll() {
     if (!alive()) return stop();
-    try { const r = await fetch(base() + "/api/lobby?cid=" + encodeURIComponent(cid()) + "&name=" + encodeURIComponent(Store.name()), { cache: "no-store" }); const d = await r.json(); S.rooms = d.rooms; S.online = d.online; S.pollOk = true; }
+    try { const r = await fetch(base() + "/api/lobby?cid=" + encodeURIComponent(cid()) + "&name=" + encodeURIComponent(Store.name()), { cache: "no-store", headers: Account.headers() }); const d = await r.json(); S.rooms = d.rooms; S.online = d.online; S.pollOk = true; }
     catch (e) { S.pollOk = false; }
     if (alive() && !S.launching) draw(true);
     S.pollT = setTimeout(poll, 2500);
@@ -108,7 +108,7 @@ const Salons = (function () {
         <div style="margin-top:12px"><button class="btn primary big" data-sa="create" ${S.ok ? "" : "disabled"}>Créer le salon</button></div></div></div>
     </div><div>
       <div class="card"><h3>Votre profil</h3><div class="body">
-        <div class="field"><div><b>Votre nom</b><small>Visible par les autres joueurs</small></div><input class="inp" data-in="name" maxlength="16" value="${E(Store.name())}"></div>
+        <div class="field"><div><b>Votre nom</b><small>Visible par les autres joueurs</small></div><input class="inp" data-in="name" maxlength="16" value="${E(Store.name())}" ${Account.loggedIn() ? "disabled title=\"Nom du compte\"" : ""}></div>${Account.loggedIn() ? `<div class="kv"><span>Compte</span><b style="color:var(--ok,#6fdc8c)">✔ ${E(Account.name())}</b></div>` : `<div class="note" style="margin:8px 0">Jouez en invité ou <a href="#" data-sa="gocompte">connectez-vous</a> pour garder votre progression et retrouver vos amis.</div>`}
         <div class="kv"><span>Véhicule</span><b>${E(Store.tank())}</b></div>${adv}
         <div class="kv"><span>Serveur</span><b id="sl-status">${statusHTML()}</b></div></div></div>
       <div class="card" style="margin-top:16px"><h3>Joueurs en ligne <span class="num muted" id="sl-ocount">${S.online.length}</span></h3><div class="body" id="sl-online">${onlineHTML()}</div></div>
@@ -182,17 +182,17 @@ const Salons = (function () {
     reset: () => send({ t: "reset" }), balance: () => send({ t: "balance" }), enter: () => launchRoom(S.room),
     team: d => send({ t: "team", mid: d.mid, team: d.t }), kick: d => { if (confirm("Expulser ce joueur du salon ?")) send({ t: "kick", mid: d.mid }); }, mkhost: d => { if (confirm("Donner l'hôte à ce joueur ? Vous perdrez le contrôle des options.")) send({ t: "host", mid: d.mid }); },
     opt: d => setOpt(d.k, isNaN(+d.v) ? d.v : +d.v), step: d => { const cur = (S.room ? S.room.cfg : form.cfg)[d.k]; setOpt(d.k, Math.max(+d.mn, Math.min(+d.mx, cur + +d.d))); },
-    tog: d => setOpt(d.k, !(S.room ? S.room.cfg : form.cfg)[d.k])
+    tog: d => setOpt(d.k, !(S.room ? S.room.cfg : form.cfg)[d.k]), gocompte: () => Nav.go("compte")
   };
   function setOpt(k, v) { if (S.room) { if (isHost()) send({ t: "cfg", cfg: { [k]: v } }); } else { form.cfg[k] = v; draw(); } }
 
   function mount(root) {
-    if (S.root !== root) { S.root = root; root.onclick = e => { const b = e.target.closest("[data-sa]"); if (!b || b.disabled) return; const f = A[b.dataset.sa]; if (f) f(b.dataset); }; }
+    if (S.root !== root) { S.root = root; root.onclick = e => { const b = e.target.closest("[data-sa]"); if (!b || b.disabled) return; const f = A[b.dataset.sa]; if (f) { e.preventDefault(); f(b.dataset); } }; }
     root.onchange = e => {
       const t = e.target;
       if (t.dataset.sel === "theme") return setOpt("theme", t.value);
       const k = t.dataset.in; if (!k) return;
-      if (k === "name") { Store.setName(t.value); send({ t: "hello", cid: cid(), name: Store.name() }); }
+      if (k === "name") { Store.setName(t.value); send({ t: "hello", cid: cid(), name: Store.name(), token: Account.token() }); }
       else if (k === "srv") { Multi.setServer(t.value); stop(); connect(); poll(); }
       else if (k === "rname") form.rname = t.value; else if (k === "pass") form.pass = t.value;
       else if (k === "rrname") send({ t: "cfg", rname: t.value }); else if (k === "rpass") send({ t: "cfg", pass: t.value });
@@ -200,5 +200,11 @@ const Salons = (function () {
     root.onkeydown = e => { if (e.target.id === "sl-say" && e.key === "Enter") { const v = e.target.value.trim(); if (v) send({ t: "chat", text: v }); e.target.value = ""; } };
     clearTimeout(S.pollT); poll(); connect(); draw();
   }
-  return { mount, stop, state: S };
+  /* Rejoindre un salon précis (depuis la liste d'amis) */
+  function joinRoom(id, locked, rname) {
+    const go = () => { let pass = ""; if (locked) { pass = prompt("Mot de passe du salon « " + (rname || "") + " » :") || ""; if (!pass) return; } send({ t: "join", room: id, pass, key: Store.tank() }); };
+    if (S.ok) go(); else S.pendingJoin = go;
+  }
+  Account.on(() => { if (S.ok) send({ t: "hello", cid: cid(), name: Store.name(), token: Account.token() }); });
+  return { mount, stop, joinRoom, state: S };
 })();

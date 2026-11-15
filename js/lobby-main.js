@@ -8,7 +8,8 @@ const SECTIONS = [
   { id: "research", n: "04", label: "Recherche", title: "Arbre de recherche", el: "s-research", mod: SecResearch },
   { id: "career", n: "05", label: "Carrière", title: "Carrière", el: "s-career", mod: SecCareer },
   { id: "settings", n: "06", label: "Réglages", title: "Réglages", el: "s-settings", mod: SecSettings },
-  { id: "atelier", n: "07", label: "Atelier", title: "Atelier de chars", el: "s-atelier", mod: SecAtelier }
+  { id: "atelier", n: "07", label: "Atelier", title: "Atelier de chars", el: "s-atelier", mod: SecAtelier },
+  { id: "compte", n: "08", label: "Compte", title: "Compte, sauvegarde et amis", el: "s-compte", mod: SecCompte }
 ];
 const Nav = {
   cur: null,
@@ -42,6 +43,8 @@ window.addEventListener("DOMContentLoaded", () => {
   Store.tank(); Store.ammo();
   Nav.build();
   const nm = $("#p-name"); nm.value = Store.name(); nm.onchange = () => { Store.setName(nm.value); nm.value = Store.name(); };
+  const lockName = () => { nm.value = Store.name(); nm.disabled = Account.loggedIn(); nm.title = Account.loggedIn() ? "Nom de votre compte" : ""; };     // connecté : le nom est celui du compte
+  Account.on(() => { lockName(); refreshHeader(); }); lockName();
   $("#sel-chip").onclick = () => Nav.go("hangar");
   window.addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && id !== Nav.cur) Nav.go(id); });
   Nav.go(location.hash.slice(1) || "hq");
