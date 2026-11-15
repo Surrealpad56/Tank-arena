@@ -150,7 +150,7 @@ const Net = (function () {
       case "dead": { const t = N.peers.get(m.id); if (!t || !t.remote || t.destroyed) break; t._lastHitBy = m.by ? find(m.by) : null; t._destroyTank(!!m.big); break; }
       case "resp": {
         const t = N.peers.get(m.id); if (!t || !t.remote) break;
-        t.destroyed = false; t.speed = 0; t.wreckTimer = 0; t.reload = 0; t.spotted = false;
+        t.destroyed = false; t.speed = 0; t.wreckTimer = 0; t.reload = 0; t.spotted = false; t.spotLevel = 0; t._spotProgress = 0; t._spottedMemoryTimer = 0;
         t.x = t.px = m.x; t.y = t.py = m.y; t.alphaTank = t.pAT = m.a; t.alphaTurret = t.pATu = m.a - Math.PI / 2; t._net = { x: m.x, y: m.y, a: m.a, tu: m.a - Math.PI / 2, el: 0, sp: 0, hp: 100 };
         t.resetModules(); t.view.setDestroyed(false);
         break;

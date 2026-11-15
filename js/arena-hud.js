@@ -14,7 +14,7 @@ const HUD = (function () {
   const KEYS = [
     ["Avancer / reculer", "W S · ↑ ↓"], ["Tourner la caisse", "A D · ← →"], ["Rapport −/+", "Q · E"], ["Frein", "Espace"],
     ["Orienter canon et caméra", "Souris"], ["Tirer", "Clic gauche"], ["Mode visée (lunette)", "Clic droit · V"], ["Distance de caméra", "Molette"],
-    ["Obus 1 / obus 2", "1 · 2"], ["Repérage actif", "T"], ["Réparer (à l'arrêt)", "R (maintenir)"], ["Carte agrandie", "M"],
+    ["Obus 1 / obus 2", "1 · 2"], ["Réparer (à l'arrêt)", "R (maintenir)"], ["Carte agrandie", "M"],
     ["Pause / commandes", "Échap · H"], ...(ARENA_CFG.mode === "test" ? [["Réinitialiser l'essai", "K"]] : []), ["Verrouiller la souris", "Clic dans le jeu"]
   ];
 
@@ -51,31 +51,125 @@ const HUD = (function () {
     svg.innerHTML = L.join("") + txt;
     H._scopeW = W + "x" + Hh;
   };
-  addEventListener("resize", () => { if (Cam && Cam.sniper) H.buildScope(); });
-
   H.init = function () {
-    ["hud", "score", "sc-a", "sc-b", "sc-mode", "sc-obj", "compass", "minimap", "mini-theme", "fps", "feed", "aim", "gun-mark", "range", "penetration", "target-info", "scope", "sc-dist", "sc-el", "sc-ammo", "sc-zoom", "markers",
+    ["hud", "score", "sc-a", "sc-b", "sc-mode", "sc-obj", "compass", "minimap", "mini-theme", "fps", "feed", "aim", "gun-mark", "range", "target-info", "scope", "scope-ret", "sc-dist", "sc-zero", "markers",
       "veh-name", "veh-cat", "orient", "spd", "gear", "eng-fill", "m-engine", "m-canon", "m-trackL", "m-trackR", "crew", "an1", "an2", "ap1", "ap2", "slot1", "slot2", "reload", "reload-fill",
-      "dmg", "dmg-cv", "dmg-chips", "dmg-sum", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "reload-txt", "spot-btn", "spot-cd", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
+      "dmg", "dmg-cv", "dmg-chips", "dmg-sum", "dmg-body", "dmg-toggle", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-map-name", "ld-map", "ld-team-list", "ld-sub", "ld-fill", "ld-step", "deploy", "deploy-mode", "deploy-map-name", "deploy-map-place", "deploy-team-list", "deploy-map-canvas", "deploy-objective", "deploy-description", "cinematic", "cinematic-kicker", "cinematic-title", "cinematic-progress", "sc-zoom", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
     { const d = Object.getOwnPropertyDescriptor(Node.prototype, "textContent");
       for (const k in el) { const e = el[k]; if (e && e.nodeType === 1) Object.defineProperty(e, "textContent", { configurable: true, get() { return d.get.call(this); }, set(v) { v = String(v); if (d.get.call(this) !== v) d.set.call(this, v); } }); } }
     el.dcv = el["dmg-cv"].getContext("2d"); el.rcv = el["rep-cv"].getContext("2d");
     el.cmp = el.compass.getContext("2d"); el.mm = el.minimap.getContext("2d"); el.or = el.orient.getContext("2d");
+    el["dmg-toggle"].onclick = () => {
+      const open = el["dmg-body"].classList.toggle("hidden") === false;
+      el["dmg-toggle"].textContent = open ? "DÉGÂTS −" : "DÉGÂTS +";
+      el["dmg-toggle"].setAttribute("aria-expanded", String(open));
+    };
+    addEventListener("resize", () => { if (Cam.sniper) H.buildScope(); });
     $("keys-grid").innerHTML = KEYS.map(k => `<div><span>${k[0]}</span><span class="num">${k[1]}</span></div>`).join("");
     el["mini-theme"].textContent = MAP_THEME_LABELS[MAP_THEME] || MAP_THEME;
+    el["ld-map-name"].textContent = MAP_THEME_LABELS[MAP_THEME] || MAP_THEME;
+    el["deploy-map-name"].textContent = MAP_THEME_LABELS[MAP_THEME] || MAP_THEME;
+    el["deploy-map-place"].textContent = MAPS[MAP_THEME].place || "";
     el["ld-sub"].textContent = (MAP_THEME_LABELS[MAP_THEME] || MAP_THEME) + " · " + (MODE_LABEL[ARENA_CFG.mode] || "");
     el.fps.classList.toggle("hidden", !Settings.get("showFps"));
     if (mobileMode) document.body.classList.add("touch");
+    H.drawMapPreview(0);
   };
   const MODE_LABEL = { sandbox: "Terrain d'entraînement", test: "Champ d'essai", skirmish: "Escarmouche", deathmatch: "Deathmatch", campaign: "Campagne", online: "En ligne", multi: "Multijoueur local" };
 
   /* ───── Chargement ───── */
-  H.setLoading = function (p, text) { el["ld-fill"].style.width = Math.round(p * 100) + "%"; el["ld-step"].textContent = Math.round(p * 100) + " % — " + (text || ""); };
+  H.drawMapPreview = function (progress) {
+    const paint = (canvas, reveal) => {
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d"), w = canvas.width, h = canvas.height, sx = w / MAP_WIDTH, sy = h / MAP_HEIGHT;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = (MAPS[MAP_THEME].pal && MAPS[MAP_THEME].pal.base) || "#26352d";
+      ctx.fillRect(0, 0, w, h);
+      if (World.S.terrainCanvas) ctx.drawImage(World.S.terrainCanvas, 0, 0, w, h);
+      else {
+        ctx.strokeStyle = "rgba(255,255,255,.07)"; ctx.lineWidth = Math.max(1, w / 500);
+        for (let i = 1; i < 12; i++) {
+          ctx.beginPath();
+          for (let x = 0; x <= w; x += Math.max(8, w / 60)) {
+            const y = h * i / 12 + Math.sin(x / (w / 9) + i * 0.8) * h * 0.018;
+            if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      }
+      for (const o of OBSTACLES) {
+        ctx.fillStyle = o.type === "building" ? "rgba(20,24,24,.82)" : o.type === "hedge" ? "rgba(24,62,34,.78)" : "rgba(65,67,58,.68)";
+        ctx.fillRect(o.x * sx, o.y * sy, Math.max(1, o.w * sx), Math.max(1, o.h * sy));
+      }
+      const sp = MAP_LAYOUT.spawn;
+      for (const team of ["A", "B"]) {
+        const [x, y] = sp[team];
+        ctx.fillStyle = team === "A" ? "rgba(77,180,255,.18)" : "rgba(255,90,68,.18)";
+        ctx.strokeStyle = team === "A" ? "#4db4ff" : "#ff5a44";
+        ctx.beginPath(); ctx.arc(x * sx, y * sy, Math.max(12, w * 0.035), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      for (let i = 0; i < CAPTURE_POINTS.length; i++) {
+        const cp = CAPTURE_POINTS[i], x = cp.x * sx, y = cp.y * sy;
+        ctx.fillStyle = cp.owner === "A" ? "#4db4ff" : cp.owner === "B" ? "#ff5a44" : "#f3f6f8";
+        ctx.strokeStyle = "#101416"; ctx.lineWidth = Math.max(2, w / 240);
+        ctx.beginPath(); ctx.arc(x, y, Math.max(6, w / 75), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#fff"; ctx.font = `700 ${Math.max(10, w / 45)}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String.fromCharCode(65 + i), x, y);
+      }
+      const shown = clamp(reveal, 0, 1) * w;
+      if (shown < w) { ctx.fillStyle = "rgba(5,9,11,.68)"; ctx.fillRect(shown, 0, w - shown, h); }
+      ctx.strokeStyle = "rgba(255,255,255,.28)"; ctx.lineWidth = 1; ctx.strokeRect(.5, .5, w - 1, h - 1);
+    };
+    paint(el["ld-map"], progress);
+    paint(el["deploy-map-canvas"], 1);
+  };
+  H.setLoadingTeam = function (roster) {
+    const rows = roster.map(r => ({ key: r[0], player: r[1], isPlayer: !!r[2] }));
+    H.renderTeam(roster.length ? rows : [{ key: selectedKey, player: "Vous", isPlayer: true }], el["ld-team-list"]);
+  };
+  H.renderTeam = function (roster, container) {
+    const svg = '<svg viewBox="0 0 96 52" aria-hidden="true"><path d="M12 34h72v8H12z" fill="#222b2e" stroke="#718087" stroke-width="2"/><path d="M20 24h48l12 10H16z" fill="#75806a" stroke="#d3d7c7" stroke-width="2"/><path d="M38 18h25l7 8H34z" fill="#8d9678" stroke="#d3d7c7" stroke-width="2"/><path d="M58 19 90 14" stroke="#d3d7c7" stroke-width="3"/><circle cx="25" cy="38" r="3" fill="#b9c1b2"/><circle cx="38" cy="38" r="3" fill="#b9c1b2"/><circle cx="51" cy="38" r="3" fill="#b9c1b2"/><circle cx="64" cy="38" r="3" fill="#b9c1b2"/></svg>';
+    container.innerHTML = `<div class="team-roster">${roster.map(r => {
+      const name = esc(r.key || "Char"), player = esc(r.player || "Joueur");
+      return `<div class="team-row${r.isPlayer ? " player" : ""}"><span class="team-avatar">${svg}</span><span class="team-copy"><b>${name}</b><small>${player}${r.isPlayer ? " · VOUS" : ""}</small></span></div>`;
+    }).join("")}</div>`;
+  };
+  H.setLoading = function (p, text) {
+    const progress = clamp(p, 0, 1);
+    el["ld-fill"].style.width = Math.round(progress * 100) + "%";
+    el["ld-step"].textContent = Math.round(progress * 100) + " % — " + (text || "");
+    H.drawMapPreview(Math.max(0.08, progress));
+  };
   H.hideLoading = function () { el.loading.classList.add("hidden"); el.hud.classList.remove("hidden"); if (mobileMode) el.touch.classList.remove("hidden"); };
   H.showLoading = function () { el.loading.classList.remove("hidden"); };
+  H.showDeployment = function (rules) {
+    const roster = items.filter(t => t instanceof Tank && t.teamId === localTank.teamId && !t.destroyed);
+    H.renderTeam(roster.map(t => ({ key: t._tankKey, player: t._playerName || t._tankKey, isPlayer: t === localTank })), el["deploy-team-list"]);
+    H.drawMapPreview(1);
+    el["deploy-mode"].textContent = MODE_LABEL[ARENA_CFG.mode] || "Combat";
+    el["deploy-objective"].textContent = rules.objectiveText();
+    el["deploy-description"].textContent = MAP_THEME_META[MAP_THEME].objective || "";
+    el.deploy.classList.remove("hidden");
+  };
+  H.hideDeployment = function () { el.deploy.classList.add("hidden"); };
+  H.showCinematic = function (kind, duration) {
+    el["cinematic-kicker"].textContent = kind === "deathmatch" ? "Dernier tir" : "Fin de bataille";
+    el["cinematic-title"].textContent = kind === "deathmatch" ? "TIR DÉCISIF" : "CONTRÔLE DU TERRAIN";
+    el["cinematic-progress"].style.transition = "none";
+    el["cinematic-progress"].style.width = "0%";
+    el.cinematic.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      el["cinematic-progress"].style.transition = `width ${duration}s linear`;
+      el["cinematic-progress"].style.width = "100%";
+    });
+  };
+  H.hideCinematic = function () { el.cinematic.classList.add("hidden"); };
 
   /* ───── Écrans ───── */
   H.showPause = function (on) { el.pause.classList.toggle("hidden", !on); };
+  H.setScopeControls = function (on) {
+    const controls = $("scope-touch-controls");
+    if (controls) controls.classList.toggle("hidden", !on || !mobileMode);
+  };
   H.showWait = function (title, html, onCancel) {
     el.wait.classList.remove("hidden"); $("wait-title").textContent = title; $("wait-body").innerHTML = html;
     $("b-wait-quit").onclick = onCancel || (() => location.href = "lobby.html");
@@ -106,11 +200,11 @@ const HUD = (function () {
   H.event = function (type, detail, bearing, outgoing) {
     const d = esc(detail || "");
     switch (type) {
-      case "ricochet": feed("ric", `<b>${outgoing ? "Ricochet" : "Ricochet !"}</b>${d}`); break;
-      case "ricochet-out": feed("ric", `<b>Ricochet</b>${d}`); break;
-      case "penetration": feed(outgoing ? "out" : "pen", `<b>${outgoing ? "Perforation" : "Perforé"}</b>${d}`); break;
-      case "blocked": feed("blk", `<b>${outgoing ? "Arrêté" : "Encaissé"}</b>${d}`); break;
-      case "spall": feed("pen", `<b>Éclats</b>${d}`); break;
+      case "ricochet": feed(outgoing ? "out" : "ric", `<b>${outgoing ? "TIR INFLIGÉ · RICOCHET" : "TIR REÇU · RICOCHET"}</b>${d}`); break;
+      case "ricochet-out": feed("out", `<b>TIR INFLIGÉ · RICOCHET</b>${d}`); break;
+      case "penetration": feed(outgoing ? "out" : "pen", `<b>${outgoing ? "TIR INFLIGÉ" : "TIR REÇU"}</b>${d}`); break;
+      case "blocked": feed(outgoing ? "out" : "blk", `<b>${outgoing ? "TIR INFLIGÉ · ARRÊTÉ" : "TIR REÇU · ENCAISSÉ"}</b>${d}`); break;
+      case "spall": feed(outgoing ? "out" : "pen", `<b>${outgoing ? "TIR INFLIGÉ · ÉCLATS" : "TIR REÇU · ÉCLATS"}</b>${d}`); break;
       case "module": feed("mod", `<b>Module</b>${d}`); break;
       case "fire": feed("pen", `<b>Incendie</b>${d}`); break;
       case "fire-out": feed("sys", `<b>Incendie</b>${d}`); break;
@@ -118,7 +212,7 @@ const HUD = (function () {
       case "engine": feed("mod", `<b>Moteur</b>endommagé`); break;
       case "track": feed("mod", `<b>Chenille</b>${d || "touchée"}`); break;
       case "crew": feed("mod", `<b>Équipage</b>${d}`); break;
-      case "ammo": feed("pen", `<b>Soute</b>${d}`); break;
+      case "ammo": feed("pen", `<b>TIR REÇU · SOUTE</b>${d}`); break;
       case "killed": feed("pen", `<b>Détruit</b>`); break;
       case "capture": feed("sys", `<b>Zone</b>${d}`); break;
       case "spot": feed("sys", `<b>Repérage</b>${d}`); break;
@@ -132,7 +226,10 @@ const HUD = (function () {
     const a = document.createElement("div"); a.className = "hit-arrow" + (mine ? " mine" : "");
     a.style.transform = `rotate(${wrapAngle(bearing - Cam.yaw)}rad)`; el["hit-ring"].appendChild(a); setTimeout(() => a.remove(), 1500);
   }
-  function hitMarker() { const g = el.aim; g.style.transform = "scale(1.35)"; setTimeout(() => g.style.transform = "", 120); }
+  function hitMarker() {
+    const g = el.aim; g.classList.add("hit"); g.style.transform = "scale(1.35)";
+    setTimeout(() => { g.style.transform = ""; g.classList.remove("hit"); }, 160);
+  }
   H.onPlayerDestroyed = function (killer) {
     el.respawn.classList.remove("hidden");
     $("respawn").querySelector(".rt").textContent = "Véhicule détruit";
@@ -144,8 +241,12 @@ const HUD = (function () {
   let rep = null;
   const OUT = { ricochet: "Ricochet", blocked: "Arrêté", pen: "Perforation", spall: "Éclats", overmatch: "Overmatch" };
   H.report = function (r, dir) {
-    rep = { r, dir, until: performance.now() + 9000 };
-    el["rep-title"].textContent = dir === "out" ? "Votre tir" : "Tir reçu"; el["rep-sub"].textContent = r.tank._tankKey || "";
+    const majorReceived = dir === "in" && (r.detonated || r.fire || (r.changes || []).some(c => c.to <= 0 || c.m.kind === "crew"));
+    rep = { r, dir, showGraph: majorReceived, until: performance.now() + 9000 };
+    el["rep-title"].textContent = dir === "out" ? "TIR INFLIGÉ" : "TIR REÇU";
+    el["rep-title"].className = dir === "out" ? "outgoing" : "incoming";
+    el["rep-sub"].textContent = r.tank._tankKey || "";
+    el["rep-cv"].classList.toggle("hidden", !majorReceived);
     const pen = r.outcome === "ricochet" ? "Ricochet" : r.outcome === "blocked" ? `Arrêté · ${r.pen} / ${r.eff} mm` : r.outcome === "spall" ? "Éclats" : `${r.shell} · ${r.pen} › ${r.eff} mm`;
     const li = (c, t) => `<li class="${c}">${esc(t)}</li>`;
     let h = `<li class="note" style="color:var(--text);font-weight:600">${esc(pen)}</li>` + li("note", r.zone + (r.outcome === "ricochet" ? " — l'obus rebondit" : r.outcome === "blocked" ? " — blindage non percé" : ""));
@@ -176,7 +277,7 @@ const HUD = (function () {
     }
     if (rep) {
       if (performance.now() > rep.until) { rep = null; el.rep.classList.add("hidden"); }
-      else if (dmgT < 0.01) Dmg.drawTank(el.rcv, 150, 150, rep.r.tank, rep.r);
+      else if (rep.showGraph && dmgT < 0.01) Dmg.drawTank(el.rcv, 150, 150, rep.r.tank, rep.r);
     }
   }
 
@@ -205,9 +306,32 @@ const HUD = (function () {
       if (Math.abs(cp.progress) > 0.02 && Math.abs(cp.progress) < 1) { x.globalAlpha = .95; x.strokeStyle = cp.progress > 0 ? "#4db4ff" : "#ff5a44"; x.lineWidth = 2.5; x.beginPath(); x.arc(cp.x * sx, cp.y * sy, cp.radius * sx + 2, -1.57, -1.57 + Math.abs(cp.progress) * 6.283); x.stroke(); x.lineWidth = 1.2; }
       x.globalAlpha = 1;
     }
-    // tank
-    const dot = (t, col, sq) => { const px = t.x * sx, py = t.y * sy; x.fillStyle = col; if (t.destroyed) { x.fillStyle = "#777"; x.fillRect(px - 2, py - 2, 4, 4); return; } x.beginPath(); x.arc(px, py, sq ? 4.3 : 3.2, 0, 6.283); x.fill(); x.strokeStyle = "#000"; x.lineWidth = 1; x.stroke(); };
-    for (const it of items) if (it instanceof Tank && it !== localTank) { if (it.teamId === localTank.teamId) dot(it, "#4db4ff"); else if (it.spotted) dot(it, "#ff5a44"); }
+    // tank — 3 niveaux de spotting pour les ennemis
+    const dot = (t, col, size) => {
+      const px = t.x * sx, py = t.y * sy;
+      if (t.destroyed) { x.fillStyle = "#777"; x.fillRect(px - 2, py - 2, 4, 4); return; }
+      x.fillStyle = col;
+      x.beginPath();
+      x.arc(px, py, size, 0, 6.283);
+      x.fill();
+      x.strokeStyle = "#000"; x.lineWidth = 1; x.stroke();
+    };
+    for (const it of items) if (it instanceof Tank && it !== localTank) {
+      if (it.teamId === localTank.teamId) {
+        dot(it, "#4db4ff", 3.4);
+      } else {
+        const lv = it.spotLevel || 0;
+        if (lv > 0) {
+          const visible = !!it._spotVisibleNow;
+          const px = visible ? it.x : it._lastKnownX, py = visible ? it.y : it._lastKnownY;
+          if (Number.isFinite(px) && Number.isFinite(py)) {
+            const level = visible ? lv : 1;
+            const stale = Math.max(0, 1 - (it._spottedMemoryTimer || 0) / SPOT_MEMORY_TICKS);
+            dot({ x: px, y: py, destroyed: false }, level >= 3 ? "#ff5a44" : level === 2 ? "#ff7a44" : "#ff9a60", level >= 3 ? 3.6 : level === 2 ? 2.8 : 1.9 - stale * 0.7);
+          }
+        }
+      }
+    }
     // joueur + cône de vue
     const t = localTank, px = t.x * sx, py = t.y * sy;
     x.save(); x.translate(px, py);
@@ -328,25 +452,20 @@ const HUD = (function () {
       el["t-reload"].classList.toggle("ready", t.reload <= 0 && !!t.modules.canon);
       el["t-reload-label"].textContent = !t.modules.canon ? "CANON HORS SERVICE" : t.reload > 0 ? "RECHARGE · " + (t.reload / 60).toFixed(1) + " s" : "CANON PRÊT";
     }
-    // Repérage
-    el["spot-btn"].classList.toggle("cd", spotCooldown > 0 && !spotActive); el["spot-btn"].classList.toggle("on", spotActive);
-    el["spot-cd"].textContent = spotActive ? "ACTIF" : spotCooldown > 0 ? Math.ceil(spotCooldown / 60) + " s" : "";
     drawOrient(); drawCompass(); drawDamage(dt);
     H.miniT += dt; if (H.miniT > 0.05) { H.miniT = 0; drawMinimap(); }
     // Viseur : point visé + marqueur de canon
     const aim = Cam.aim;
     const penState = getPenetrationState();
     el.range.textContent = Math.round(aim.dist) + " m";
-    el.aim.classList.remove("possible", "uncertain", "blocked");
+    const zeroOffset = Cam.sniper ? Cam.zeroOffsetPixels() : 0;
+    el.aim.style.top = `calc(50% + ${zeroOffset}px)`;
+    el["scope-ret"].style.transform = `translateY(${zeroOffset}px)`;
+    el.aim.classList.remove("neutral", "possible", "uncertain", "blocked");
     if (penState) {
       el.aim.classList.add(penState.kind);
-      el.penetration.textContent = penState.label;
-      el.penetration.classList.remove("hidden");
-      el.penetration.className = "penetration " + penState.kind;
     } else {
       el.aim.classList.add("neutral");
-      el.penetration.classList.add("hidden");
-      el.penetration.textContent = "";
     }
     /* Point d'impact prévu (trajectoire balistique réelle depuis le canon), recalculé une image sur deux */
     H._impN = (H._impN || 0) + 1; const imp = (H._impN & 1) || !Cam.impact.valid ? Cam.predictImpact() : Cam.impact;
@@ -362,36 +481,74 @@ const HUD = (function () {
         px = cx + dx * k; py = cy + dy * k; edge = true;
       }
       gm.style.display = "block"; gm.style.left = px + "px"; gm.style.top = py + "px";
-      gm.lastChild.textContent = Math.round(imp.dist) + " m";
-      const dd = Math.hypot(px - cx, py - cy); gm.classList.toggle("far", dd > 160 && !edge); gm.classList.toggle("edge", edge); gm.classList.toggle("rside", px > W * 0.6); gm.classList.toggle("onfoe", !!(imp.target && imp.target.teamId !== t.teamId));
+      const dd = Math.hypot(px - cx, py - cy); gm.classList.toggle("far", dd > 160 && !edge); gm.classList.toggle("edge", edge); gm.classList.toggle("onfoe", !!(imp.target && imp.target.teamId !== t.teamId));
     } else gm.style.display = "none";
     if (Cam.sniper) {
       const sc = el.scope;
       sc.classList.remove("possible", "uncertain", "blocked"); if (penState) sc.classList.add(penState.kind);
       el["sc-dist"].textContent = aim.kind === "none" ? "—" : Math.round(aim.dist) + " m";
-      el["sc-el"].textContent = (t.gunElevation >= 0 ? "+" : "−") + Math.abs(t.gunElevation).toFixed(1) + "°";
-      el["sc-ammo"].textContent = t.currentAmmo || "—";
-      el["sc-zoom"].textContent = "×" + (Cam.fovBase / Math.max(1, cam.fov)).toFixed(1);
+      el["sc-zoom"].textContent = "×" + Cam.zoomLabel().toLocaleString("fr-FR");
+      el["sc-zero"].textContent = "ZÉRO " + Cam.zeroMeters + " m";
       if (H._scopeW !== innerWidth + "x" + innerHeight) H.buildScope();
     }
     const ti = el["target-info"];
     if (aim.target && !aim.target.destroyed) {
-      const ally = aim.target.teamId === t.teamId; ti.className = ally ? "ally" : "foe";
-      ti.textContent = (aim.target._playerName || aim.target._tankKey) + " · " + Math.round(aim.dist) + " m"; el.range.textContent = "";
+      const ally = aim.target.teamId === t.teamId;
+      const lv = ally ? 3 : (aim.target.spotLevel || 0);
+      if (ally || lv >= 3) {
+        ti.className = ally ? "ally" : "foe";
+        ti.textContent = (aim.target._playerName || aim.target._tankKey) + " · " + Math.round(aim.dist) + " m";
+      } else if (lv === 2) {
+        ti.className = "foe";
+        ti.textContent = "Cible · " + Math.round(aim.dist) + " m";
+      } else if (lv === 1) {
+        ti.className = "foe";
+        ti.textContent = "Contact · " + Math.round(aim.dist) + " m";
+      } else {
+        ti.textContent = "";
+      }
+      el.range.textContent = "";
     } else { ti.textContent = ""; }
-    // Marqueurs
+    // Marqueurs — 3 niveaux de spotting
     let mi = 0;
     const consider = tk => {
       if (tk === t) return;
-      const ally = tk.teamId === t.teamId;
-      if (!ally && !tk.spotted) return;
       if (tk.destroyed) return;
-      const d = Math.hypot(tk.x - t.x, tk.y - t.y) * PX;
-      const p = Cam.project(tk.x * PX, tk.profile.totalHeight + 1.4 + (tk.gz || 0) * PX, tk.y * PX, cam, H._q || (H._q = {})); if (!p) return;
-      const e = marker(mi++); e.className = "mk " + (ally ? "a" : "b");
+      const ally = tk.teamId === t.teamId;
+      const lv = ally ? 3 : (tk.spotLevel || 0);
+      if (!ally && lv < 1) return;
+      const visible = ally || !!tk._spotVisibleNow;
+      const x = visible ? tk.x : tk._lastKnownX, y = visible ? tk.y : tk._lastKnownY;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const level = visible ? lv : 1;
+      const d = Math.hypot(x - t.x, y - t.y) * PX;
+      const gz = visible ? (tk.gz || 0) : groundH(x, y);
+      const p = Cam.project(x * PX, tk.profile.totalHeight + 1.4 + gz * PX, y * PX, cam, H._q || (H._q = {})); if (!p) return;
+      const e = marker(mi++);
       e.style.display = "block"; e.style.left = p.x + "px"; e.style.top = p.y + "px";
-      const nm = tk._playerName || tk._tankKey; const html = esc(nm) + `<small class="num">${Math.round(d)} m</small><i></i>`;
-      if (e._h !== html) { e.innerHTML = html; e._h = html; }
+      e.classList.toggle("mem", !visible);
+      if (ally) {
+        e.className = "mk a";
+        const nm = tk._playerName || tk._tankKey;
+        const html = esc(nm) + `<small class="num">${Math.round(d)} m</small><i></i>`;
+        if (e._h !== html) { e.innerHTML = html; e._h = html; }
+      } else if (level >= 3) {
+        // Identified : nom + distance
+        e.className = "mk b";
+        const nm = tk._playerName || tk._tankKey;
+        const html = esc(nm) + `<small class="num">${Math.round(d)} m</small><i></i>`;
+        if (e._h !== html) { e.innerHTML = html; e._h = html; }
+      } else if (level === 2) {
+        // Silhouette : marqueur sans nom
+        e.className = "mk b sil" + (visible ? "" : " mem");
+        const html = `<i></i>`;
+        if (e._h !== html) { e.innerHTML = html; e._h = html; }
+      } else {
+        // Contact : petit point
+        e.className = "mk b contact" + (visible ? "" : " mem");
+        const html = `<i></i>`;
+        if (e._h !== html) { e.innerHTML = html; e._h = html; }
+      }
     };
     for (const it of items) if (it instanceof Tank) consider(it);
     for (let k = mi; k < markerPool.length; k++) markerPool[k].style.display = "none";

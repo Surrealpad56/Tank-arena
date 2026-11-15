@@ -13,7 +13,7 @@ const World = (function () {
   const W = MAP_WIDTH * PX, H = MAP_HEIGHT * PX;      // 444 × 472 m
   const S = {
     renderer: null, scene: null, camera: null, sun: null, sky: null, terrain: null, terrainCanvas: null,
-    quality: null, vis: THEME_VIS[MAP_THEME], treeChunks: [], capture: [], dynamicLights: [], ready: false
+    quality: null, vis: THEME_VIS[MAP_THEME], treeChunks: [], capture: [], dynamicLights: [], cinematicWinner: null, ready: false
   };
 
   /* ───── Textures procédurales ───── */
@@ -346,7 +346,10 @@ const World = (function () {
       const cp = c.cp, col = cp.contested ? CAP_COL.C : cp.owner === "A" ? CAP_COL.A : cp.owner === "B" ? CAP_COL.B : CAP_COL.N;
       for (const m of [c.disc, c.ring, c.beam, c.flag]) m.material.color.setHex(col);
       c.flag.rotation.y = Math.sin(time * 2.2) * 0.25;
-      c.beam.material.opacity = cp.contested ? 0.1 + 0.08 * Math.sin(time * 9) : 0.08;
+      const highlighted = S.cinematicWinner === cp.owner && !cp.contested;
+      c.ring.material.opacity = highlighted ? 0.88 + 0.12 * Math.sin(time * 4) : 0.7;
+      c.disc.material.opacity = highlighted ? 0.2 + 0.08 * Math.sin(time * 4) : 0.1;
+      c.beam.material.opacity = highlighted ? 0.3 + 0.12 * Math.sin(time * 4) : cp.contested ? 0.1 + 0.08 * Math.sin(time * 9) : 0.08;
       const pk = Math.round(cp.progress * 80);
       if (pk !== c.lastProg) {
         c.lastProg = pk;
@@ -440,5 +443,7 @@ const World = (function () {
 
   function render() { S.renderer.render(S.scene, S.camera); }
 
-  return { S, init, resize, update, render, W, H };
+  function setCinematicWinner(team) { S.cinematicWinner = team; }
+
+  return { S, init, resize, update, render, setCinematicWinner, W, H };
 })();

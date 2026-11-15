@@ -440,8 +440,17 @@ const Dmg = (function () {
     for (const it of items) if (it instanceof Tank && it.int && it.int.xray) {
       const x = it.int.xray; x.life -= dt; if (x.life <= 0 || it.destroyed && x.life < 5) { D.hideXray(it); continue; }
       const P = it.profile, ry = relYawOf(it);
-      x.root.position.set(it.x * PX, 0, it.y * PX); x.hullG.rotation.y = Math.PI / 2 - it.alphaTank;
-      x.turG.position.set(P.pivotX, P.hullTop, 0); x.turG.rotation.y = -ry;
+      // Suivre la hauteur du terrain (gz) et l'attitude du char (pitch / roll) pour coller à la courbure
+      const gy = (it.gz || 0) * PX;
+      const pit = (it.pitch || 0) + (it.accPitch || 0);
+      const rol = (it.roll || 0) + (it.accRoll || 0);
+      const yawHull = Math.PI / 2 - it.alphaTank;
+      x.root.position.set(it.x * PX, gy, it.y * PX);
+      x.root.rotation.order = "YZX";
+      x.root.rotation.set(rol, yawHull, pit);
+      x.hullG.rotation.y = 0; // yaw déjà appliqué sur root
+      x.turG.position.set(P.pivotX, P.hullTop, 0);
+      x.turG.rotation.y = -ry;
       for (const i of x.items) i.mesh.material.color.setHex(stCol(i.m));
     }
   };

@@ -39,7 +39,6 @@ function setupControls(canvas) {
     else if (e.code === "KeyE") localTank.gear = Math.min(6, localTank.gear + 1);
     else if (e.code === "Digit1" || e.code === "Numpad1") switchAmmo(selectedAmmos[0]);
     else if (e.code === "Digit2" || e.code === "Numpad2") switchAmmo(selectedAmmos[1]);
-    else if (e.code === "KeyT") activateSpot();
     else if (e.code === "KeyV") Cam.setSniper(!Cam.sniper);
     else if (e.code === "KeyM") document.getElementById("mini").classList.toggle("big");
     else if (e.code === "KeyK") testReset();
@@ -60,10 +59,23 @@ function setupControls(canvas) {
   });
   window.addEventListener("mouseup", e => { if (e.button === 0) Input.fire = false; });
   canvas.addEventListener("contextmenu", e => e.preventDefault());
-  canvas.addEventListener("wheel", e => { e.preventDefault(); if (!Game.paused) Cam.zoom(e.deltaY > 0 ? 1.2 : -1.2); }, { passive: false });
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    if (Game.paused) return;
+    const step = e.deltaY > 0 ? 1 : -1;
+    if (Cam.sniper) { if (e.shiftKey) Cam.setZeroStep(step); else Cam.setZoomStep(step); }
+    else Cam.zoom(step * 1.2);
+  }, { passive: false });
 
   document.getElementById("b-resume").onclick = () => { setPaused(false); Game.started = true; lockPointer(); if (audioCtx && audioCtx.state === "suspended") audioCtx.resume(); };
   document.getElementById("b-quit").onclick = () => { location.href = "lobby.html"; };
+  document.getElementById("deploy-enter").onclick = () => {
+    HUD.hideDeployment();
+    setPaused(false); Game.started = true;
+    lockPointer();
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  };
+  document.getElementById("deploy-lobby").onclick = () => { location.href = "lobby.html"; };
   setupTouch();
 }
 
@@ -73,6 +85,10 @@ function setupTouch() {
   const hit = (id, fn) => { const b = document.getElementById(id); b.addEventListener("touchstart", e => { e.preventDefault(); fn(true); }, { passive: false }); b.addEventListener("touchend", e => { e.preventDefault(); fn(false); }, { passive: false }); b.addEventListener("touchcancel", e => { e.preventDefault(); fn(false); }, { passive: false }); };
   hit("t-fire", v => Input.fire = v);
   hit("t-snipe", v => { if (v) Cam.setSniper(!Cam.sniper); });
+  document.getElementById("t-zoom-out").addEventListener("click", () => Cam.setZoomStep(-1));
+  document.getElementById("t-zoom-in").addEventListener("click", () => Cam.setZoomStep(1));
+  document.getElementById("t-zero-down").addEventListener("click", () => Cam.setZeroStep(-1));
+  document.getElementById("t-zero-up").addEventListener("click", () => Cam.setZeroStep(1));
   hit("t-repair", v => {
     const b = document.getElementById("t-repair");
     if (v && localTank && Math.abs(localTank.speed) <= 0.3 && !localTank.destroyed && !Game.paused) Input.repair = true;
@@ -96,7 +112,7 @@ function setupTouch() {
   joy.addEventListener("touchend", endJoy); joy.addEventListener("touchcancel", endJoy);
   // regarder : glisser n'importe où ailleurs sur la vue
   const cv = document.getElementById("Game");
-  cv.addEventListener("touchstart", e => { if (Game.paused) { return; } const t = e.changedTouches[0]; if (Input.look.id === null) { Input.look.id = t.identifier; Input.look.x = t.clientX; Input.look.y = t.clientY; } if (!mobileMode) { mobileMode = true; document.body.classList.add("touch"); document.getElementById("touch").classList.remove("hidden"); } e.preventDefault(); }, { passive: false });
+  cv.addEventListener("touchstart", e => { if (Game.paused) { return; } const t = e.changedTouches[0]; if (Input.look.id === null) { Input.look.id = t.identifier; Input.look.x = t.clientX; Input.look.y = t.clientY; } if (!mobileMode) { mobileMode = true; document.body.classList.add("touch"); document.getElementById("touch").classList.remove("hidden"); HUD.setScopeControls(Cam.sniper); } e.preventDefault(); }, { passive: false });
   cv.addEventListener("touchmove", e => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === Input.look.id) { Cam.look((t.clientX - Input.look.x) * 1.4, (t.clientY - Input.look.y) * 1.4); Input.look.x = t.clientX; Input.look.y = t.clientY; } }, { passive: false });
   const endLook = e => { for (const t of e.changedTouches) if (t.identifier === Input.look.id) Input.look.id = null; };
   cv.addEventListener("touchend", endLook); cv.addEventListener("touchcancel", endLook);
