@@ -6,7 +6,7 @@
 const Settings = (function () {
   const KEY = "ta_settings_v3";
   const DEFAULTS = {
-    quality: "high",      // low | medium | high | ultra  (ombres, densité d'arbres, résolution du sol)
+    quality: "ultra",     // qualité maximale par défaut
     sens: 1.0,            // sensibilité souris / tactile (0.3 – 2.5)
     invertY: false,
     fov: 70,              // champ de vision de la caméra de poursuite (55 – 95)
@@ -21,6 +21,13 @@ const Settings = (function () {
     let o = {};
     try { o = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { }
     cache = Object.assign({}, DEFAULTS, o);
+    // Migration unique : cette version du projet démarre en qualité maximale,
+    // y compris pour les installations qui avaient encore le réglage "high".
+    if (!cache._graphicsMaxMigrated) {
+      cache.quality = "ultra";
+      cache._graphicsMaxMigrated = true;
+      try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch (e) { }
+    }
     return cache;
   }
   function get(k) { return load()[k]; }

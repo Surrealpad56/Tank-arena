@@ -594,7 +594,7 @@ const SecCareer = {
 /* ===================================================================
    06 RÉGLAGES
    =================================================================== */
-const QDESC = { low: "Sans ombres · fluide", medium: "Ombres légères", high: "Ombres nettes", ultra: "Ombres et sol détaillés" };
+const QDESC = { low: "Sans ombres · fluide", medium: "Ombres légères", high: "Ombres nettes", ultra: "ACES · 4K textures · ombres 4K · distance étendue" };
 const SecSettings = {
   render(el) {
     const S = Settings.all(), sl = (k, mn, mx, st, fmtv) => `<input type="range" min="${mn}" max="${mx}" step="${st}" value="${S[k]}" data-a="slide" data-k="${k}"><span class="val num" id="v-${k}">${fmtv(S[k])}</span>`;

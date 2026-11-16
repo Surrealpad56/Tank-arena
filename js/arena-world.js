@@ -23,7 +23,7 @@ const World = (function () {
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     if (repeat) t.repeat.set(repeat[0], repeat[1]);
-    t.anisotropy = 4;
+    t.anisotropy = S.renderer ? Math.min(16, S.renderer.capabilities.getMaxAnisotropy()) : 4;
     return t;
   }
   function speckle(ctx, w, h, base, amt, n) {
@@ -100,10 +100,10 @@ const World = (function () {
   /* ───── Sol ───── */
   function buildTerrain(canvas) {
     const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = 8;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = S.renderer ? Math.min(16, S.renderer.capabilities.getMaxAnisotropy()) : 8;
     tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
     const detail = detailTexture(); detail.repeat.set(1, 1);
-    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 });
+    const mat = new THREE.MeshStandardMaterial({ map: tex, bumpMap: detail, bumpScale: 0.10, roughness: 1, metalness: 0 });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.detailMap = { value: detail };
       sh.uniforms.detailRep = { value: new THREE.Vector2(W / 3.2, H / 3.2) };
@@ -379,7 +379,12 @@ const World = (function () {
     const rend = new THREE.WebGLRenderer({ canvas, antialias: q.antialias, powerPreference: "high-performance" });
     rend.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
     rend.setSize(window.innerWidth, window.innerHeight);
-    rend.shadowMap.enabled = q.shadows; rend.shadowMap.type = THREE.PCFShadowMap;
+    // Pipeline couleur cinématique : conversion sRGB + tonemapping ACES.
+    // Disponible dans Three.js r128, sans dépendance de post-processing externe.
+    rend.outputEncoding = THREE.sRGBEncoding;
+    rend.toneMapping = THREE.ACESFilmicToneMapping;
+    rend.toneMappingExposure = 1.12;
+    rend.shadowMap.enabled = q.shadows; rend.shadowMap.type = THREE.PCFSoftShadowMap;
     S.renderer = rend;
     const vis = S.vis;
     const scene = new THREE.Scene(); S.scene = scene;
@@ -388,14 +393,14 @@ const World = (function () {
     const cam = new THREE.PerspectiveCamera(Settings.get("fov"), window.innerWidth / window.innerHeight, 0.3, 3200); S.camera = cam;
     scene.add(cam);
 
-    scene.add(new THREE.HemisphereLight(vis.hemiSky, vis.hemiGround, vis.hemiI * 0.62));
-    const sun = new THREE.DirectionalLight(vis.sun, vis.sunI * 0.62);
+    scene.add(new THREE.HemisphereLight(vis.hemiSky, vis.hemiGround, vis.hemiI * 0.72));
+    const sun = new THREE.DirectionalLight(vis.sun, vis.sunI * 0.78);
     S.sunDir = new THREE.Vector3(...vis.sunDir).normalize();
     sun.castShadow = q.shadows;
     if (q.shadows) {
       sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
       const sc = sun.shadow.camera; const R = 62; sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 1; sc.far = 260;
-      sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05;
+      sun.shadow.bias = -0.00025; sun.shadow.normalBias = 0.025; sun.shadow.radius = 3;
     }
     scene.add(sun); scene.add(sun.target); S.sun = sun;
 
