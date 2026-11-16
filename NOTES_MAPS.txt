@@ -1,4 +1,4 @@
-FICHIERS AJOUTÉS : js/map-engine.js, js/map-defs.js, models/models.js (manifeste vide)
+FICHIERS AJOUTÉS : js/map-engine.js, js/map-defs.js, js/models.js (manifeste vide)
 FICHIERS REMPLACÉS : js/terrain-gen.js
 RETOUCHÉS (petites modifs) : arena.html, lobby.html (2 balises script), css/lobby.css (.mapinfo), js/lobby-sections.js (carte d'info), js/lobby-state.js (validation du thème),
  js/arena-terrain.js (obstacles/relief/LOS), js/arena-world.js (sol en relief, décor posé au sol, ponts), js/arena-entities.js (altitude, tangage/roulis, obus au sol),
