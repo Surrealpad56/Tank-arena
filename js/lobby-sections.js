@@ -637,7 +637,7 @@ const SecSettings = {
       quality: d => { Settings.set("quality", d.q); re(); }, tog: d => { Settings.set(d.k, !Settings.get(d.k)); re(); },
       rsRes: () => confirmBox("Réinitialiser la recherche ?", "Les véhicules recherchés, l'XP disponible et la progression de campagne seront effacés. Les statistiques sont conservées.", "Réinitialiser", () => { Store.resetResearch(); refreshAll(); re(); }, true),
       rsAll: () => confirmBox("Effacer tout le profil ?", "Recherche, statistiques, historique et jalons seront définitivement supprimés.", "Tout effacer", () => { Store.resetAll(); refreshAll(); re(); }, true),
-      rsSet: () => { Settings.reset(); re(); toast("Réglages rétablis"); }, devxp: () => { Store.addXP(1000); refreshAll(); toast("+1 000 XP"); }
+      rsSet: () => { Settings.reset(); re(); toast("Réglages rétablis"); }, devxp: () => { refreshAll();}
     });
   }
 };
