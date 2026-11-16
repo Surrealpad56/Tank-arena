@@ -85,7 +85,7 @@ const TANK_MODULES =
       }
     },
     "ammo": {
-      "AP": {
+      "APC": {
         "muzzleVelocity": 800,
         "mass": 3.8,
         "caliber": 50,
@@ -168,7 +168,7 @@ const TANK_MODULES =
         "penetration": 61,
         "damage": 115,
         "explosion": 0.5,
-        "fuze": false
+        "fuze": true
       },
       "HE": {
         "muzzleVelocity": 680,
@@ -235,7 +235,7 @@ const TANK_MODULES =
       }
     },
     "ammo": {
-      "AP": {
+      "APCBC": {
         "muzzleVelocity": 792,
         "mass": 1.08,
         "caliber": 40,
@@ -243,7 +243,7 @@ const TANK_MODULES =
         "penetration": 66,
         "damage": 55,
         "explosion": 0.3,
-        "fuze": false
+        "fuze": true
       },
       "APDS": {
         "muzzleVelocity": 1220,
@@ -488,7 +488,7 @@ const TANK_MODULES =
         "penetration": 75,
         "damage": 125,
         "explosion": 0.5,
-        "fuze": false
+        "fuze": true
       },
       "APCR": {
         "muzzleVelocity": 950,
