@@ -620,7 +620,7 @@ const SecSettings = {
           <li><b>Jouer → Multijoueur → Déployer</b> : le premier crée la partie, les autres la rejoignent.</li>
         </ol><div id="mh-box"></div></div></div>
       <div class="card" style="margin-top:18px"><h3>Modèles 3D <span class="num muted">${keys.filter(k => man[k]).length} / ${keys.length} fournis</span></h3><div class="body">
-        <div class="note" style="margin-bottom:10px">Déposez vos fichiers <b>.glb / .gltf / .obj</b> dans <b>models/</b> puis déclarez-les dans <b>models/models.js</b>. Un char sans modèle utilise l'assemblage procédural de sa catégorie. Un serveur HTTP local est nécessaire pour charger les fichiers.</div>
+        <div class="note" style="margin-bottom:10px">Déposez vos fichiers <b>.glb / .gltf / .obj</b> dans <b>models/</b> puis déclarez-les dans <b>js/models.js</b>. Un char sans modèle utilise l'assemblage procédural de sa catégorie. Un serveur HTTP local est nécessaire pour charger les fichiers.</div>
         <table class="mtable">${keys.map(k => `<tr><td>${escHTML(k)}</td><td><span class="tag ${man[k] ? "ok" : ""}">${man[k] ? "Modèle déclaré" : "Procédural · " + getTankProfile(k).catLabel}</span></td></tr>`).join("")}</table></div></div>
       <div class="card" style="margin-top:18px"><h3>Données</h3><div class="body">
         <div class="field"><div><b>Réinitialiser la recherche</b><small>Efface les véhicules acquis, l'XP disponible et la campagne</small></div><button class="btn sm danger" data-a="rsRes">Réinitialiser</button></div>

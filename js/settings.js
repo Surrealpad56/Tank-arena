@@ -43,7 +43,7 @@ const Settings = (function () {
     low:    { shadows: false, shadowMap: 1024, pixelRatio: 0.75, trees: 0.25, terrainTex: 1024, antialias: false, particles: 0.5, far: 520 },
     medium: { shadows: true,  shadowMap: 1024, pixelRatio: 1.0,  trees: 0.5,  terrainTex: 1536, antialias: false, particles: 0.75, far: 700 },
     high:   { shadows: true,  shadowMap: 2048, pixelRatio: 1.0,  trees: 1.0,  terrainTex: 2048, antialias: true,  particles: 1.0, far: 900 },
-    ultra:  { shadows: true,  shadowMap: 4096, pixelRatio: 1.5,  trees: 1.5,  terrainTex: 3072, antialias: true,  particles: 1.4, far: 1200 }
+    ultra:  { shadows: true,  shadowMap: 4096, pixelRatio: 1.5,  trees: 1.8,  terrainTex: 4096, antialias: true,  particles: 1.5, far: 1800 }
   };
   function quality() { return QUALITY[get("quality")] || QUALITY.high; }
 

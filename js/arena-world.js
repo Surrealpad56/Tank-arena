@@ -103,7 +103,7 @@ const World = (function () {
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = S.renderer ? Math.min(16, S.renderer.capabilities.getMaxAnisotropy()) : 8;
     tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
     const detail = detailTexture(); detail.repeat.set(1, 1);
-    const mat = new THREE.MeshStandardMaterial({ map: tex, bumpMap: detail, bumpScale: 0.10, roughness: 1, metalness: 0 });
+    const mat = new THREE.MeshStandardMaterial({ map: tex, bumpMap: detail, bumpScale: 0.14, roughness: 1, metalness: 0 });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.detailMap = { value: detail };
       sh.uniforms.detailRep = { value: new THREE.Vector2(W / 3.2, H / 3.2) };
@@ -383,7 +383,7 @@ const World = (function () {
     // Disponible dans Three.js r128, sans dépendance de post-processing externe.
     rend.outputEncoding = THREE.sRGBEncoding;
     rend.toneMapping = THREE.ACESFilmicToneMapping;
-    rend.toneMappingExposure = 1.12;
+    rend.toneMappingExposure = 0.98;
     rend.shadowMap.enabled = q.shadows; rend.shadowMap.type = THREE.PCFSoftShadowMap;
     S.renderer = rend;
     const vis = S.vis;
