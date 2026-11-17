@@ -1711,8 +1711,8 @@ const TANK_MODULES =
         "caliber": 88,
         "drag": 0.31,
         "penetration": 238,
-        "damage": 210,
-        "explosion": 1.7,
+        "damage": 250,
+        "explosion": 5,
         "fuze": true
       },
       "APCR": {
