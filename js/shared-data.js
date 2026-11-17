@@ -2055,15 +2055,15 @@ const TANK_MODULES =
       }
     },
     "ammo": {
-      "APDS": {
+      "APCBC": {
         "muzzleVelocity": 1478,
         "mass": 5,
         "caliber": 105,
         "drag": 0.22,
-        "penetration": 303,
-        "damage": 180,
-        "explosion": 0.2,
-        "fuze": false
+        "penetration": 903,
+        "damage": 1800,
+        "explosion": 10,
+        "fuze": true
       },
       "HEAT": {
         "muzzleVelocity": 1173,
