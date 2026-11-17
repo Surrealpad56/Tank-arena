@@ -1,4 +1,4 @@
-/* ==========================================================================
+ /* ==========================================================================
    SHARED-DATA.JS — Source unique de vérité pour les données de chars/obus
    Chargé par lobby.html ET arena.html.
 
