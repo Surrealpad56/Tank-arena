@@ -2030,27 +2030,27 @@ const TANK_MODULES =
     "reloadSec": 7.5,
     "armor": {
       "hullFront": {
-        "thickness": 70,
+        "thickness": 7000,
         "angle": 60
       },
       "hullSide": {
-        "thickness": 35,
+        "thickness": 3500,
         "angle": 30
       },
       "hullRear": {
-        "thickness": 25,
+        "thickness": 2500,
         "angle": 20
       },
       "turretFront": {
-        "thickness": 200,
+        "thickness": 20000,
         "angle": 0
       },
       "turretSide": {
-        "thickness": 60,
+        "thickness": 6000,
         "angle": 30
       },
       "turretRear": {
-        "thickness": 52,
+        "thickness": 5200,
         "angle": 20
       }
     },
@@ -2060,9 +2060,9 @@ const TANK_MODULES =
         "mass": 5,
         "caliber": 105,
         "drag": 0.22,
-        "penetration": 903,
-        "damage": 1800,
-        "explosion": 10,
+        "penetration": 9030,
+        "damage": 18000,
+        "explosion": 100,
         "fuze": true
       },
       "HEAT": {
