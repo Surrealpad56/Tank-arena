@@ -2022,12 +2022,12 @@ const TANK_MODULES =
   },
   "Leopard 1": {
     "canon": true,
-    "speed": 65,
-    "reverseSpeed": -7,
+    "speed": 155,
+    "reverseSpeed": -55,
     "crew": 4,
-    "turretRotSpeed": 22,
+    "turretRotSpeed": 220,
     "weightTons": 42.4,
-    "reloadSec": 7.5,
+    "reloadSec": 0.1,
     "armor": {
       "hullFront": {
         "thickness": 7000,
@@ -2056,13 +2056,13 @@ const TANK_MODULES =
     },
     "ammo": {
       "APCBC": {
-        "muzzleVelocity": 1478,
-        "mass": 5,
-        "caliber": 105,
-        "drag": 0.22,
-        "penetration": 9030,
+        "muzzleVelocity": 14780,
+        "mass": 500,
+        "caliber": 1050,
+        "drag": 0.01,
+        "penetration": 90300,
         "damage": 18000,
-        "explosion": 100,
+        "explosion": 100000,
         "fuze": true
       },
       "HEAT": {
