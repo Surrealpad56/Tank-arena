@@ -46,18 +46,20 @@
     <div id="reticle">
       <div id="aim" class="neutral"><i></i><i></i><i></i><i></i></div>
       <div id="range" class="num disp"></div>
+      <div id="penetration" class="penetration hidden"></div>
       <div id="target-info"></div>
     </div>
     <div id="scope" class="hidden">
       <div id="scope-lens"></div>
       <svg id="scope-ret" xmlns="http://www.w3.org/2000/svg"></svg>
       <div id="scope-info">
-        <b id="sc-zoom">×3,5</b>
-        <b id="sc-zero">ZÉRO 200 m</b>
-        <span id="sc-dist">— m</span>
+        <div><span>Distance</span><b id="sc-dist">—</b></div>
+        <div><span>Élévation</span><b id="sc-el">0.0°</b></div>
+        <div><span>Munition</span><b id="sc-ammo">—</b></div>
+        <div><span>Zoom</span><b id="sc-zoom">×1</b></div>
       </div>
     </div>
-    <div id="gun-mark"><i></i></div>
+    <div id="gun-mark"><i></i><b></b></div>
 
     <!-- Marqueurs de chars -->
     <div id="markers"></div>
@@ -87,8 +89,8 @@
 
     <!-- État des modules (vue de dessus) -->
     <div id="dmg" class="cut">
-      <div class="dh disp"><span>État du char</span><span id="dmg-sum" class="num"></span><button id="dmg-toggle" aria-expanded="false">DÉGÂTS +</button></div>
-      <div id="dmg-body" class="db hidden"><canvas id="dmg-cv" width="150" height="150"></canvas><div id="dmg-chips"></div></div>
+      <div class="dh disp"><span>Modules</span><span id="dmg-sum" class="num"></span></div>
+      <div class="db"><canvas id="dmg-cv" width="150" height="150"></canvas><div id="dmg-chips"></div></div>
     </div>
 
     <!-- Rapport du dernier impact -->
@@ -104,6 +106,8 @@
       <div id="reload"><i id="reload-fill"></i><span id="reload-txt" class="disp num">PRÊT</span></div>
     </div>
 
+    <!-- Aide rapide -->
+    <div id="spot-btn" class="disp"><kbd>T</kbd> Repérage <span id="spot-cd" class="num"></span></div>
     <div id="respawn" class="hidden"><div class="disp rt">Véhicule détruit</div><div id="respawn-txt" class="num"></div></div>
     <div id="toast" class="hidden"></div>
   </div>
@@ -117,42 +121,17 @@
     <button id="t-repair" class="disp" disabled aria-disabled="true" title="Réparation disponible à l’arrêt">RÉPARER</button>
     <button id="t-ammo" class="disp">OBUS</button>
     <button id="t-pause" class="disp">Ⅱ</button>
-    <div id="scope-touch-controls" class="hidden" aria-label="Réglages de la lunette">
-      <button id="t-zoom-out" aria-label="Réduire le zoom">−</button>
-      <button id="t-zoom-in" aria-label="Augmenter le zoom">+</button>
-      <button id="t-zero-down" aria-label="Réduire la distance de zéro">Z−</button>
-      <button id="t-zero-up" aria-label="Augmenter la distance de zéro">Z+</button>
-    </div>
   </div>
 
   <!-- ───────── Écrans ───────── -->
   <div id="loading" class="screen">
-    <div class="ld-card ld-board cut">
-      <header class="ld-header"><div><div class="ld-tag disp">Déploiement</div><h1 id="ld-map-name" class="disp"></h1></div><div id="ld-sub" class="ld-sub"></div></header>
-      <div class="ld-overview">
-        <div class="ld-map"><canvas id="ld-map" width="640" height="420"></canvas><span class="disp">Carte opérationnelle</span></div>
-        <aside class="ld-team"><div class="ld-section-title disp">Équipe alliée</div><div id="ld-team-list"></div></aside>
-      </div>
-      <div class="ld-status">
-        <div><h2 class="disp" id="ld-title">Chargement de la zone…</h2><div class="ld-bar"><i id="ld-fill"></i></div><div id="ld-step" class="num">0 %</div></div>
-      </div>
+    <div class="ld-card cut">
+      <div class="ld-tag disp">Déploiement</div>
+      <h1 class="disp" id="ld-title">Chargement de la zone…</h1>
+      <div id="ld-sub" class="ld-sub"></div>
+      <div class="ld-bar"><i id="ld-fill"></i></div>
+      <div id="ld-step" class="num">0 %</div>
     </div>
-  </div>
-
-  <div id="deploy" class="screen hidden">
-    <div class="deploy-card cut">
-      <header class="deploy-header"><div><div class="ld-tag disp" id="deploy-mode">Préparation</div><h1 id="deploy-map-name" class="disp"></h1></div><span id="deploy-map-place"></span></header>
-      <div class="deploy-grid">
-        <section class="deploy-team"><div class="ld-section-title disp">Équipe alliée</div><div id="deploy-team-list"></div></section>
-        <div class="deploy-map"><canvas id="deploy-map-canvas" width="900" height="580"></canvas><div class="deploy-legend"><span>Zones de départ</span><span>Points de capture</span></div></div>
-        <aside class="deploy-objective"><div class="ld-section-title disp">Objectif</div><h2 id="deploy-objective"></h2><p id="deploy-description"></p></aside>
-      </div>
-      <footer class="deploy-actions"><button class="btn disp" id="deploy-lobby">Retour au QG</button><button class="btn primary disp" id="deploy-enter">Entrer en combat</button></footer>
-    </div>
-  </div>
-
-  <div id="cinematic" class="screen hidden" aria-live="polite">
-    <div class="cinematic-caption"><span class="ld-tag disp" id="cinematic-kicker">Fin de bataille</span><strong id="cinematic-title"></strong><i><b id="cinematic-progress"></b></i></div>
   </div>
 
   <div id="pause" class="screen hidden">
@@ -189,10 +168,13 @@
   <script src="js/map-defs.js"></script>
   <script src="js/terrain-gen.js"></script>
   <script src="js/model-loaders.js"></script>
-  <script src="js/models.js"></script>
+  <script src="models/models.js"></script>
   <script src="js/tank-designs.js"></script>
   <script src="js/tank-models.js"></script>
   <script src="js/arena-constants.js"></script>
+  <script src="js/arena-look.js"></script>
+  <script src="js/arena-weather.js"></script>
+  <script src="js/arena-post.js"></script>
   <script src="js/arena-terrain.js"></script>
   <script src="js/arena-world.js"></script>
   <script src="js/arena-fx.js"></script>

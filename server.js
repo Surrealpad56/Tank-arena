@@ -22,7 +22,8 @@ const ROOM_LIMIT = 24, OFFLINE_GRACE = 90000;
 const rooms = new Map(), presence = new Map();
 let roomSeq = 0, pidSeq = 0, midSeq = 0;
 const clean = (s, n) => String(s == null ? "" : s).replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, n);
-const DEF_CFG = { theme: "random", botsA: 0, botsB: 0, difficulty: "normal", scoreToWin: 10, respawnBots: true, maxPlayers: 8, teamMode: "free", caps: true, allowLate: true };
+const WEATHERS = ["auto", "clear", "cloudy", "rain", "storm", "snow", "fog", "sand"], TODS = ["auto", "dawn", "day", "dusk", "night"];
+const DEF_CFG = { weather: "auto", tod: "auto", theme: "random", botsA: 0, botsB: 0, difficulty: "normal", scoreToWin: 10, respawnBots: true, maxPlayers: 8, teamMode: "free", caps: true, allowLate: true };
 function sanitizeCfg(inp, base) {
   const c = Object.assign({}, base || DEF_CFG);
   if (!inp || typeof inp !== "object") return c;
@@ -31,6 +32,8 @@ function sanitizeCfg(inp, base) {
   num("botsA", 0, 8); num("botsB", 0, 8); num("scoreToWin", 3, 50); num("maxPlayers", 2, 12);
   if (["easy", "normal", "hard"].includes(inp.difficulty)) c.difficulty = inp.difficulty;
   if (["free", "auto", "host"].includes(inp.teamMode)) c.teamMode = inp.teamMode;
+  if (WEATHERS.includes(inp.weather)) c.weather = inp.weather;
+  if (TODS.includes(inp.tod)) c.tod = inp.tod;
   for (const k of ["respawnBots", "caps", "allowLate"]) if (typeof inp[k] === "boolean") c[k] = inp[k];
   return c;
 }
@@ -604,6 +607,8 @@ function onMessage(c, m) {
     if (t === "reset") { if (r.state !== "playing") return; r.state = "lobby"; r.sawGame = false; r.simHostCid = null; for (const x of r.members.values()) { x.pid = null; x.ready = false; } r.byPid.clear(); sysChat(r, "L'hôte a rouvert le salon"); pushRoom(r); return; }
     if (t === "start") {
       if (r.state !== "lobby") return;
+      if (r.cfg.weather === "auto" && WEATHERS.includes(m.weather) && m.weather !== "auto") r.cfg.weather = m.weather;       // « auto » résolu par l'hôte pour que tout le monde voie le même temps
+      if (r.cfg.tod === "auto" && TODS.includes(m.tod) && m.tod !== "auto") r.cfg.tod = m.tod;
       if (r.cfg.theme === "random") { if (typeof m.theme === "string" && /^[a-z0-9_-]{1,24}$/i.test(m.theme)) r.cfg.theme = m.theme; else return errTo(c, "Carte aléatoire non résolue."); }
       r.state = "playing"; r.round++; r.sawGame = false; r.simHostCid = null; r.byPid.clear();
       for (const x of r.members.values()) { x.pid = "p" + (++pidSeq); r.byPid.set(x.pid, x); x.ready = false; x.inGame = false; }

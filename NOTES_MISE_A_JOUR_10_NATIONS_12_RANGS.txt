@@ -15,6 +15,6 @@ Tests réalisés :
 - tous les véhicules produisent un profil de catalogue valide et possèdent des munitions.
 
 Limites connues :
-- les nouveaux véhicules utilisent le modèle procédural de secours s'ils n'ont pas de modèle 3D dédié dans js/models.js;
+- les nouveaux véhicules utilisent le modèle procédural de secours s'ils n'ont pas de modèle 3D dédié dans models/models.js;
 - les caractéristiques ajoutées sont des estimations de gameplay, non des données historiques certifiées;
 - les tests automatisés ne remplacent pas un essai manuel complet dans un navigateur/mobile.
