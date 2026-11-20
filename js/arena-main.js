@@ -41,8 +41,6 @@ async function boot() {
     FX.init(World.S.scene, World.S.camera, World.S.renderer);
     HUD.setLoading(0.82, "Chargement des véhicules…");
     const bots = (ARENA_CFG.mode === "multi" && !Net.host) ? [] : populateBots();
-    HUD.setLoadingTeam([[selectedKey, localStorage.getItem("PlayerName") || "Vous", true],
-      ...bots.filter(b => b[0] === teamId).map(b => [b[2], b[2], false])]);
     const keys = new Set([selectedKey, ...bots.map(b => b[2])]);
     await Promise.all([...keys].map(k => TankModels.loadModelFor(k)));
     HUD.setLoading(0.92, "Mise en place des équipes…");
@@ -66,20 +64,25 @@ async function boot() {
 }
 
 function beginPlay() {
+  try { setTimeout(() => HUD.toast("Météo : " + Weather.cond.label + " · " + Weather.tod.label), 1800); } catch (e) { }
+  try { HUD.toast("Météo : " + Weather.cond.label + " · " + Weather.tod.label); } catch (e) { }
   if (AUTO) { Game.started = true; Game.paused = false; HUD.showPause(false); return; }
+  document.querySelector("#pause .ld-tag").textContent = "Prêt au combat";
+  document.querySelector("#pause h2").textContent = "Commandes";
+  document.getElementById("b-resume").textContent = "Prendre le commandement";
   if (ARENA_CFG.mode === "test" && !document.getElementById("b-test")) {
     const b = document.createElement("button"); b.className = "btn disp"; b.id = "b-test"; b.textContent = "Changer d'essai";
     b.onclick = () => { location.href = "lobby.html#play"; };
     document.querySelector("#pause .pa-btns").insertBefore(b, document.getElementById("b-quit"));
   }
-  HUD.showDeployment(Rules);
+  HUD.showPause(true);
 }
 
 /* ───── Simulation (60 Hz) ───── */
 function simStep() {
   Rules.tick(STEP);
-  tickCapturePoints();
-  for (const it of items) if (it instanceof Tank) tickEnemySpotting(it);
+  tickSpotting(); tickCapturePoints();
+  for (const it of items) if (it instanceof Tank && it !== localTank && it.teamId !== localTank.teamId) tickEnemySpotting(it); else if (it instanceof Tank) it.spotted = true;
   applyPlayerInput();
   for (const it of [...items]) {
     if (it._botTick) it._botTick();
@@ -99,7 +102,7 @@ function simStep() {
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = (now - _last) / 1000; _last = now; if (dt > 0.25) dt = 0.25; if (dt <= 0) dt = 0.0001;
-  const live = !gameOver && (!Game.paused || Net.on);   // en multijoueur la partie ne s'arrête pas
+  const live = !Game.paused || Net.on;   // en multijoueur la partie ne s'arrête pas
   if (live) { _acc += dt; let n = 0; while (_acc >= STEP && n < 5) { simStep(); _acc -= STEP; n++; } if (n === 5) _acc = 0; }
   _time += dt;
   const a = live ? _acc / STEP : 1, fdt = live ? dt : 0;
@@ -107,15 +110,14 @@ function frame(now) {
   // vues
   for (const it of items) if (it instanceof Tank) {
     it.syncView(a, fdt);
-    if (it !== localTank) it.view.setVisible(true);
+    if (it !== localTank) it.view.setVisible(it.teamId === localTank.teamId || it.spotted || it.destroyed);
     if (live) it.fxUpdate(dt);
   }
   Cam.update(dt, S.camera);
   Cam.computeAim();
   if (!localTank.destroyed) localTank.aimTarget = Cam.aim;
   World.update(_time, localTank.view.root.position);
-  const cinematic = !!Cam.cinematic;
-  FX.update(live || cinematic ? dt : 0); Dmg.update(live ? dt : 0);
+  FX.update(live ? dt : 0); Dmg.update(live ? dt : 0);
   updateEngineSound(Math.abs(localTank.speed) / (PIXELS_PER_METER * TICK_RATE));
   HUD.update(dt, S.camera, Rules);
   World.render();

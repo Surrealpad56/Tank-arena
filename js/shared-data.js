@@ -1,4 +1,4 @@
-    /* ==========================================================================
+/* ==========================================================================
    SHARED-DATA.JS — Source unique de vérité pour les données de chars/obus
    Chargé par lobby.html ET arena.html.
 
@@ -85,7 +85,7 @@ const TANK_MODULES =
       }
     },
     "ammo": {
-      "APC": {
+      "AP": {
         "muzzleVelocity": 800,
         "mass": 3.8,
         "caliber": 50,
@@ -168,7 +168,7 @@ const TANK_MODULES =
         "penetration": 61,
         "damage": 115,
         "explosion": 0.5,
-        "fuze": true
+        "fuze": false
       },
       "HE": {
         "muzzleVelocity": 680,
@@ -235,7 +235,7 @@ const TANK_MODULES =
       }
     },
     "ammo": {
-      "APCBC": {
+      "AP": {
         "muzzleVelocity": 792,
         "mass": 1.08,
         "caliber": 40,
@@ -243,7 +243,7 @@ const TANK_MODULES =
         "penetration": 66,
         "damage": 55,
         "explosion": 0.3,
-        "fuze": true
+        "fuze": false
       },
       "APDS": {
         "muzzleVelocity": 1220,
@@ -488,7 +488,7 @@ const TANK_MODULES =
         "penetration": 75,
         "damage": 125,
         "explosion": 0.5,
-        "fuze": true
+        "fuze": false
       },
       "APCR": {
         "muzzleVelocity": 950,
@@ -1711,8 +1711,8 @@ const TANK_MODULES =
         "caliber": 88,
         "drag": 0.31,
         "penetration": 238,
-        "damage": 250,
-        "explosion": 5,
+        "damage": 210,
+        "explosion": 1.7,
         "fuze": true
       },
       "APCR": {
@@ -2022,48 +2022,48 @@ const TANK_MODULES =
   },
   "Leopard 1": {
     "canon": true,
-    "speed": 155,
-    "reverseSpeed": -55,
+    "speed": 65,
+    "reverseSpeed": -7,
     "crew": 4,
-    "turretRotSpeed": 220,
+    "turretRotSpeed": 22,
     "weightTons": 42.4,
-    "reloadSec": 0.1,
+    "reloadSec": 7.5,
     "armor": {
       "hullFront": {
-        "thickness": 7000,
+        "thickness": 70,
         "angle": 60
       },
       "hullSide": {
-        "thickness": 3500,
+        "thickness": 35,
         "angle": 30
       },
       "hullRear": {
-        "thickness": 2500,
+        "thickness": 25,
         "angle": 20
       },
       "turretFront": {
-        "thickness": 20000,
+        "thickness": 200,
         "angle": 0
       },
       "turretSide": {
-        "thickness": 6000,
+        "thickness": 60,
         "angle": 30
       },
       "turretRear": {
-        "thickness": 5200,
+        "thickness": 52,
         "angle": 20
       }
     },
     "ammo": {
-      "APCBC": {
-        "muzzleVelocity": 14780,
-        "mass": 500,
-        "caliber": 1050,
-        "drag": 0.01,
-        "penetration": 90300,
-        "damage": 18000,
-        "explosion": 100000,
-        "fuze": true
+      "APDS": {
+        "muzzleVelocity": 1478,
+        "mass": 5,
+        "caliber": 105,
+        "drag": 0.22,
+        "penetration": 303,
+        "damage": 180,
+        "explosion": 0.2,
+        "fuze": false
       },
       "HEAT": {
         "muzzleVelocity": 1173,

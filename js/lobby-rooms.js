@@ -13,7 +13,7 @@ const Salons = (function () {
   const TM_HINT = { free: "Chaque joueur choisit son équipe (limite : moitié des places par équipe).", auto: "Le serveur équilibre les équipes à l'arrivée ; seul l'hôte peut déplacer un joueur.", host: "Seul l'hôte place les joueurs dans les équipes." };
   const DIFF = { easy: "Facile", normal: "Normal", hard: "Difficile" };
   const themeName = t => t === "random" ? "Aléatoire" : ((typeof MAP_THEME_META !== "undefined" && MAP_THEME_META[t] && MAP_THEME_META[t].name) || (typeof MAP_THEME_LABELS !== "undefined" && MAP_THEME_LABELS[t]) || t);
-  const form = { rname: "", pass: "", team: "A", cfg: { theme: "random", botsA: 0, botsB: 2, difficulty: "normal", scoreToWin: 10, respawnBots: true, maxPlayers: 8, teamMode: "free", caps: true, allowLate: true } };
+  const form = { rname: "", pass: "", team: "A", cfg: { weather: "auto", tod: "auto", theme: "random", botsA: 0, botsB: 2, difficulty: "normal", scoreToWin: 10, respawnBots: true, maxPlayers: 8, teamMode: "free", caps: true, allowLate: true } };
 
   const cid = () => { let c = localStorage.getItem("MpCid"); if (!c) { c = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)).replace(/[^a-z0-9-]/gi, ""); localStorage.setItem("MpCid", c); } return c; };
   const base = () => (location.protocol === "https:" ? "https://" : "http://") + Multi.server();
@@ -52,7 +52,7 @@ const Salons = (function () {
   /* ───── Lancement de l'arène ───── */
   function launchRoom(room) {
     if (S.launching) return; S.launching = true;
-    const c = room.cfg, a = { mode: "multi", theme: c.theme, allies: 0, enemies: 0, difficulty: c.difficulty, scoreToWin: c.scoreToWin, respawnBots: c.respawnBots, caps: c.caps, net: { server: Multi.server(), room: room.id } };
+    const c = room.cfg, a = { mode: "multi", theme: c.theme, allies: 0, enemies: 0, difficulty: c.difficulty, scoreToWin: c.scoreToWin, respawnBots: c.respawnBots, caps: c.caps, weather: c.weather, tod: c.tod, net: { server: Multi.server(), room: room.id } };
     toast("La partie démarre…"); localStorage.setItem("arenaConfig", JSON.stringify(a)); setTimeout(() => { location.href = "arena.html"; }, 350);
   }
 
@@ -64,6 +64,8 @@ const Salons = (function () {
     const tog = () => `<button class="toggle ${v ? "on" : ""}" data-sa="tog" data-k="${k}" aria-label="${k}"></button>`;
     switch (k) {
       case "theme": return `<select class="inp" data-sel="theme"><option value="random" ${v === "random" ? "selected" : ""}>Aléatoire</option>${MAP_THEMES.map(t => `<option value="${t}" ${v === t ? "selected" : ""}>${E(themeName(t))}</option>`).join("")}</select>`;
+      case "weather": return `<select class="inp" data-sel="weather">${WEATHER_OPTS.map(([x, l]) => `<option value="${x}" ${v === x ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+      case "tod": return `<select class="inp" data-sel="tod">${TOD_OPTS.map(([x, l]) => `<option value="${x}" ${v === x ? "selected" : ""}>${l}</option>`).join("")}</select>`;
       case "botsA": return stp(0, 8); case "botsB": return stp(0, 8); case "maxPlayers": return stp(2, 12);
       case "difficulty": return seg([["easy", "Facile"], ["normal", "Normal"], ["hard", "Difficile"]]);
       case "scoreToWin": return seg([[5, "5"], [10, "10"], [15, "15"], [20, "20"], [30, "30"]]);
@@ -71,9 +73,9 @@ const Salons = (function () {
       case "respawnBots": case "caps": case "allowLate": return tog();
     }
   }
-  const showVal = (k, v) => ({ theme: themeName(v), difficulty: DIFF[v], teamMode: TM[v], respawnBots: v ? "Oui" : "Non", caps: v ? "Oui" : "Non", allowLate: v ? "Oui" : "Non", scoreToWin: "Premier à " + v })[k] ?? String(v);
+  const showVal = (k, v) => ({ theme: themeName(v), difficulty: DIFF[v], teamMode: TM[v], respawnBots: v ? "Oui" : "Non", caps: v ? "Oui" : "Non", allowLate: v ? "Oui" : "Non", scoreToWin: "Premier à " + v, weather: (WEATHER_OPTS.find(o => o[0] === v) || [0, v])[1], tod: (TOD_OPTS.find(o => o[0] === v) || [0, v])[1] })[k] ?? String(v);
   const ROWS = [
-    ["theme", "Carte", "Le terrain de la partie"], ["maxPlayers", "Joueurs maximum", "Places humaines dans le salon"],
+    ["theme", "Carte", "Le terrain de la partie"], ["weather", "Météo", "Identique pour tous les joueurs"], ["tod", "Heure", "Soleil, aube, crépuscule ou nuit"], ["maxPlayers", "Joueurs maximum", "Places humaines dans le salon"],
     ["teamMode", "Choix des équipes", null], ["botsA", "Bots équipe A", "Chars IA gérés par l'hôte"], ["botsB", "Bots équipe B", "Chars IA gérés par l'hôte"],
     ["difficulty", "Difficulté de l'IA", "Précision et cadence de tir des bots"], ["scoreToWin", "Score à atteindre", "Destructions + zones capturées"],
     ["respawnBots", "Réapparition des bots", "Les bots détruits reviennent"], ["caps", "Zones de capture", "Désactivées : combat pur, les bots traquent l'ennemi"], ["allowLate", "Entrée en cours de partie", "Un joueur peut rejoindre un match commencé"]
@@ -178,7 +180,13 @@ const Salons = (function () {
     create: () => { send({ t: "create", rname: form.rname, pass: form.pass, cfg: form.cfg, team: form.team, name: Store.name(), key: Store.tank() }); },
     fteam: d => { form.team = d.v; draw(); },
     leave: () => send({ t: "leave" }), ready: () => { const m = me(); send({ t: "ready", v: !(m && m.ready) }); },
-    start: () => { const t = S.room.cfg.theme === "random" ? MAP_THEMES[Math.floor(Math.random() * MAP_THEMES.length)] : undefined; send({ t: "start", theme: t }); },
+    start: () => {
+      const c = S.room.cfg, th = c.theme === "random" ? MAP_THEMES[Math.floor(Math.random() * MAP_THEMES.length)] : c.theme;
+      const pk = a => a[Math.floor(Math.random() * a.length)], desert = th === "alamein" || th === "golan", wintry = th === "ardennes" || th === "stalingrad";
+      const w = c.weather !== "auto" ? c.weather : desert ? pk(["clear", "clear", "clear", "sand", "cloudy"]) : wintry ? pk(["snow", "snow", "fog", "cloudy", "clear"]) : pk(["clear", "clear", "cloudy", "cloudy", "rain", "fog", "storm"]);
+      const d = c.tod !== "auto" ? c.tod : pk(["day", "day", "day", "day", "dawn", "dusk", "night"]);
+      send({ t: "start", theme: c.theme === "random" ? th : undefined, weather: w, tod: d });
+    },
     reset: () => send({ t: "reset" }), balance: () => send({ t: "balance" }), enter: () => launchRoom(S.room),
     team: d => send({ t: "team", mid: d.mid, team: d.t }), kick: d => { if (confirm("Expulser ce joueur du salon ?")) send({ t: "kick", mid: d.mid }); }, mkhost: d => { if (confirm("Donner l'hôte à ce joueur ? Vous perdrez le contrôle des options.")) send({ t: "host", mid: d.mid }); },
     opt: d => setOpt(d.k, isNaN(+d.v) ? d.v : +d.v), step: d => { const cur = (S.room ? S.room.cfg : form.cfg)[d.k]; setOpt(d.k, Math.max(+d.mn, Math.min(+d.mx, cur + +d.d))); },
@@ -190,7 +198,7 @@ const Salons = (function () {
     if (S.root !== root) { S.root = root; root.onclick = e => { const b = e.target.closest("[data-sa]"); if (!b || b.disabled) return; const f = A[b.dataset.sa]; if (f) { e.preventDefault(); f(b.dataset); } }; }
     root.onchange = e => {
       const t = e.target;
-      if (t.dataset.sel === "theme") return setOpt("theme", t.value);
+      if (t.dataset.sel) return setOpt(t.dataset.sel, t.value);
       const k = t.dataset.in; if (!k) return;
       if (k === "name") { Store.setName(t.value); send({ t: "hello", cid: cid(), name: Store.name(), token: Account.token() }); }
       else if (k === "srv") { Multi.setServer(t.value); stop(); connect(); poll(); }

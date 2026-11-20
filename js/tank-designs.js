@@ -166,12 +166,16 @@
     k = k || 1;
     const M = new Map(), P0 = design.paint || {};
     const tex = camoTex(P0);
-    const stat = (key, col, r, m) => { if (!M.has(key)) M.set(key, new THREE.MeshStandardMaterial({ color: col, roughness: r, metalness: m })); return M.get(key); };
+    const lookIt = m => { if (global.Look) global.Look.tank(m, LPref.v, null); return m; };      // usure, boue, poussière (arena-look.js)
+    const LPref = { v: null };
+    const stat = (key, col, r, m) => { if (!M.has(key)) M.set(key, lookIt(new THREE.MeshStandardMaterial({ color: col, roughness: r, metalness: m }))); return M.get(key); };
     const paintMat = part => {
       const key = "P|" + (part.rough ?? 0.85) + "|" + (part.metal ?? 0.12);
-      if (!M.has(key)) M.set(key, new THREE.MeshStandardMaterial({ color: tex ? 0xffffff : new THREE.Color(P0.c1 || "#5b6b3a"), map: tex || null, roughness: part.rough ?? 0.85, metalness: part.metal ?? 0.12 }));
+      if (!M.has(key)) M.set(key, lookIt(new THREE.MeshStandardMaterial({ color: tex ? 0xffffff : new THREE.Color(P0.c1 || "#5b6b3a"), map: tex || null, roughness: part.rough ?? 0.85, metalness: part.metal ?? 0.12 })));
       return M.get(key);
     };
+    const LP = { wear: P0.wear === undefined ? 0.35 : P0.wear, mud: P0.mud === undefined ? 0.3 : P0.mud, dust: P0.dust === undefined ? 0.2 : P0.dust, rust: P0.rust === undefined ? 0.08 : P0.rust };
+    LPref.v = LP;
     const mats = { track: stat("track", 0x2a2b2a, 0.95, 0.2), wheel: stat("wheel", 0x45484b, 0.7, 0.35), cap: stat("cap", 0x66696c, 0.6, 0.4), paint: null };
     const root = new THREE.Group(), hull = new THREE.Group(), turretPivot = new THREE.Group(), turretMeshes = new THREE.Group(), gunPivot = new THREE.Group(), barrel = new THREE.Group(), gunMeshes = new THREE.Group(), muzzle = new THREE.Object3D();
     root.add(hull); root.add(turretPivot); turretPivot.add(turretMeshes); turretPivot.add(gunPivot); gunPivot.add(barrel); barrel.add(gunMeshes); barrel.add(muzzle);

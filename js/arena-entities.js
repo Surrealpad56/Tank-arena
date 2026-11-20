@@ -113,6 +113,7 @@ const TankGeometry = {
       // casemate : seul le canon pivote — l'azimut relatif se traduit par le lacet du pivot de canon
       v.turretPivot.rotation.y = wrapAngle(-atu - yawHull);
     }
+    if (v.groundU) v.groundU.value = (this.gz || 0) * PX;
     const pit = this.pitch || 0, rol = this.roll || 0;
     v.setPose(x * PX, y * PX, yawHull, turretRel, elev - pit * Math.cos(turretRel), this.recoilOffset || 0, (this.gz || 0) * PX, pit + (this.accPitch || 0), rol + (this.accRoll || 0));
     if (this.profile.casemate && !this.destroyed) v.turretPivot.rotation.y = wrapAngle(-atu - yawHull);
@@ -226,8 +227,6 @@ class Shell extends Item {
     super(origin.x, origin.y);
     this.z = origin.z;
     this.owner = owner; this.type = ammoType; this.explode = false; this.nbImage = 0; this.age = 0; this.travel = 0;
-    this._trail = [{ x: this.x, y: this.y, z: this.z }];
-    this._trailTick = 0;
     this.fuzeDelay = 0; this.pendingTarget = null; this.pendingInfo = null; this.networked = !owner;
     const data = getAmmoData(ammoType, ownerModules);
     this.data = data;
@@ -293,13 +292,7 @@ class Shell extends Item {
       if (this.x < 0 || this.y < 0 || this.x > MAP_WIDTH || this.y > MAP_HEIGHT) { this._finish(); this.kill(); return; }
     }
     if (this.age > 12) { this.kill(); return; }
-    if (++this._trailTick % 3 === 0) this._recordTrail();
     this._orient();
-  }
-
-  _recordTrail() {
-    this._trail.push({ x: this.x, y: this.y, z: this.z });
-    if (this._trail.length > 360) this._trail.shift();
   }
 
   _hitTank(target, hit, remote, pid) {
@@ -307,14 +300,11 @@ class Shell extends Item {
     if (this.type === "HEAT") this.currentPenetration = this.penetration0;
     if (this.type === "shrapnel") this.damage = Math.round(this.damage * 0.65);
     const wx = this.x * PX, wy = this.z * PX, wz = this.y * PX;
-    this._recordTrail();
-    target._lastHitShell = { path: this._trail.map(p => ({ x: p.x, y: p.y, z: p.z })), caliber: this.caliber };
     this._finish();
     if (this.type === "fumigène") { FX.smokeScreen(wx, wy, wz); addDamageEvent("blocked", "FUMÉE déployée"); return; }
     if (this.owner === localTank) battleStats.shotsHit++;
-    if (remote) { target.takeShellHitNet(this, hit, pid); if (!target.destroyed) target._lastHitShell = null; return; }
+    if (remote) { target.takeShellHitNet(this, hit, pid); return; }
     target.takeShellHit(this, hit);
-    if (!target.destroyed) target._lastHitShell = null;
   }
 }
 
@@ -343,7 +333,7 @@ class Tank extends Item {
     this.recoilOffset = 0;
     this._repairTimer = 0;
     this.teamId = teamIdParam || "A";
-    this.spotted = false; this.spotLevel = 0; this._spotProgress = 0; this._spottedMemoryTimer = 0; this._lastKnownX = null; this._lastKnownY = null; this._firedTimer = 0;
+    this.spotted = false; this._spottedMemoryTimer = 0; this._lastKnownX = null; this._lastKnownY = null; this._firedTimer = 0;
     this._tankModules = modulesOverride || TankModules;
     this._eyeRel = (this.profile.hullTop + this.profile.tu.h * 0.7) * M2PX;
     this.gz = groundH(x, y); this.pitch = 0; this.roll = 0;
@@ -501,6 +491,7 @@ class Tank extends Item {
     }
     if (this.int && this.int.fire && Math.random() < 0.7) FX.fire(wx - Math.sin(this.alphaTank) * P.L * 0.3, gy + P.hullTop + 0.3, wz + Math.cos(this.alphaTank) * P.L * 0.3, 0.8);
     if (this.engineHealth < 50 && Math.random() < 0.3) FX.damageSmoke(wx - Math.sin(this.alphaTank) * P.L * 0.35, gy + P.hullTop + 0.2, wz + Math.cos(this.alphaTank) * P.L * 0.35, this.engineHealth < 20);
+    Look.Tracks.mark(this, this.speed);
     if (Math.abs(this.speed) > 0.6) {
       this.dustTimer += Math.abs(this.speed);
       if (this.dustTimer > 2.2) {
@@ -686,7 +677,7 @@ class Tank extends Item {
     if (out.detonated) { this._ev("ammo", "Soute touchée — explosion !"); this._ammoRack(); }
     else Dmg.afterDamage(this);
   }
-  _ev(type, detail) { if (this === localTank) HUD.event(type, detail); }
+  _ev(type, detail) { if (this === localTank) { HUD.event(type, detail); if (typeof Post !== "undefined" && /hit|pen|dmg|damage|module|crew/i.test(String(type))) Post.hit(0.45); } }
   _ammoRack() {
     for (const k of Object.keys(this.modules.crew)) this.modules.crew[k] = false;
     if (this.int) for (const m of this.int.mods) if (m.kind === "crew" || m.kind === "ammo") m.hp = 0;

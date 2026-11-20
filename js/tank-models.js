@@ -867,8 +867,9 @@
   function create(key) {
     const profile = getTankProfile(key);
     const st = modelState[key];
-    if (st && st.status === "ready") return TankView.fromModelTemplate(profile, st.tpl);
-    return TankView.fromProcedural(profile);
+    const v = (st && st.status === "ready") ? TankView.fromModelTemplate(profile, st.tpl) : TankView.fromProcedural(profile);
+    if (global.Look) global.Look.tankView(v);                       // usure, boue, poussière, humidité (arena-look.js)
+    return v;
   }
   function hasRealModel(key) { const s = modelState[key]; return !!(s && s.status === "ready"); }
   function modelStatus(key) { const s = modelState[key]; return s ? s.status : ((global.TANK_MODEL_MANIFEST || {})[key] ? "pending" : "procedural"); }

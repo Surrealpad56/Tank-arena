@@ -31,6 +31,7 @@ const ARENA_CFG = (function () {
     scoreToWin: 10,
     respawnBots: true,
     enemyTanks: null,       // liste de clés de chars pour les bots ennemis (campagne)
+    weather: "auto", tod: "auto",   // météo (auto | clear | cloudy | rain | storm | snow | fog | sand) et heure (auto | dawn | day | dusk | night)
     mission: null           // { num, name, kills, lives, timeLimit, reward }
   }, c);
   cfg.enemies = Math.max(0, Math.min(8, cfg.enemies | 0));
@@ -39,130 +40,72 @@ const ARENA_CFG = (function () {
 })();
 const MAP_THEME = (ARENA_CFG.theme && MAP_THEMES.includes(ARENA_CFG.theme)) ? ARENA_CFG.theme : MAP_THEMES[Math.floor(Math.random() * MAP_THEMES.length)];
 
-/* ========== SPOTTING RÉALISTE — 3 NIVEAUX ==========
-   Distances en pixels de carte (18 px = 1 m).
-   Niveaux : 0 none · 1 contact · 2 silhouette · 3 identified
-   Mémoire ~12 s après perte de vue. Partage d’équipe (joueur + bots alliés). */
-const SPOT_CONTACT_RANGE   = 4200;   // ~233 m — premier contact possible
-const SPOT_SILHOUETTE_RANGE = 2800;  // ~155 m
-const SPOT_IDENTIFY_RANGE  = 1800;   // ~100 m
-const SPOT_NOISE_RANGE     = 3200;   // bruit de chenilles
-const SPOT_MEMORY_TICKS    = 720;    // ~12 s à 60 Hz
-const SPOT_IDENTIFY_TIME   = 150;    // ~2.5 s d’observation pour identifier pleinement
+/* ========== SPOTTING — MÉMOIRE & LIGNE DE VUE 3D ==========
+   Distances en pixels de carte (18 px = 1 m). Une même carte de ~450 m de
+   côté : détection passive 60 m, bruit de chenilles 100 m, repérage actif 165 m. */
+const SPOT_PASSIVE_RANGE = 1800;
+const SPOT_NOISE_RANGE = 3000;
+const SPOT_ACTIVE_RANGE = 6000;
+const SPOT_ACTIVE_DURATION = 120;
+const SPOT_COOLDOWN_TICKS = 480;
+const SPOT_MEMORY_TICKS = 480;
 
-/* Œil d'un char (centre de la tourelle) : hauteur en pixels */
-function tankEye(t) { return t.eyeZ !== undefined ? t.eyeZ : 2.6 * M2PX; }
+let spotActive = false;
+let spotCooldown = 0;
+let spotActiveTimer = 0;
 
-/* Facteur de taille du char (plus grand = plus facile à détecter) */
-function spotSizeFactor(tank) {
-  const L = (tank.profile && tank.profile.L) || 6;
-  const W = (tank.profile && tank.profile.W) || 3;
-  return clamp((L * W) / 18, 0.7, 1.45);
+function tickSpotting() {
+  if (spotCooldown > 0) spotCooldown--;
+  if (spotActive) { spotActiveTimer--; if (spotActiveTimer <= 0) spotActive = false; }
 }
 
-/* Le char `enemy` est-il détecté par le joueur ou un allié ? */
+function activateSpot() {
+  if (spotCooldown > 0 || !localTank || localTank.destroyed) return;
+  spotActive = true;
+  spotActiveTimer = SPOT_ACTIVE_DURATION;
+  spotCooldown = SPOT_COOLDOWN_TICKS;
+  HUD.event("spot", "REPÉRAGE ACTIF");
+}
+
+/* Œil d'un char (centre de la tourelle) : [x, y, z] en pixels */
+function tankEye(t) { return t.eyeZ !== undefined ? t.eyeZ : 2.6 * M2PX; }
+
+/* Le char `enemy` est-il vu par l'un des chars amis (joueur + alliés) ? */
 function tickEnemySpotting(enemy) {
   if (!localTank || !enemy || enemy === localTank) return;
-
-  // Alliés toujours connus
-  if (enemy.teamId === localTank.teamId) {
-    enemy.spotLevel = 3;
+  if (enemy.teamId && enemy.teamId !== localTank.teamId) {
     enemy.spotted = true;
-    enemy._spotVisibleNow = true;
-    enemy._spotProgress = 1;
     enemy._spottedMemoryTimer = SPOT_MEMORY_TICKS;
+    enemy._lastKnownX = enemy.x; enemy._lastKnownY = enemy.y;
     return;
   }
-
-  // Collecte des observateurs (joueur + bots alliés vivants)
   const viewers = [];
   if (localTank && !localTank.destroyed) viewers.push(localTank);
-  for (const it of items) {
-    if (it instanceof Tank && !it.destroyed && it !== localTank && it.teamId === localTank.teamId) viewers.push(it);
-  }
-
+  for (const it of items) if (it instanceof Tank && !it.destroyed && it !== localTank && it.teamId === localTank.teamId) viewers.push(it);
+  let seenNow = (enemy._firedTimer || 0) > 0;
+  let bestCover = 0;
   const ez = tankEye(enemy);
-  const sizeF = spotSizeFactor(enemy);
-  const speed = Math.abs(enemy.speed || 0);
-  const moving = speed > 1.2;
-  const fired = (enemy._firedTimer || 0) > 0;
-  const onFire = !!(enemy.int && enemy.int.fire);
-
-  let bestLevel = 0;
-  let bestProgressGain = 0;
-
   for (const v of viewers) {
+    if (seenNow) break;
     const dist = Math.hypot(v.x - enemy.x, v.y - enemy.y);
-    if (dist > SPOT_CONTACT_RANGE * 1.15) continue;
-
+    if (dist > SPOT_ACTIVE_RANGE) continue;
+    const isLocal = v === localTank;
     const los = losInfo(v.x, v.y, tankEye(v), enemy.x, enemy.y, ez);
     if (los.blocked) continue;
-
-    // Couverture végétale
-    const cover = los.hedges > 0 ? 0.5 : 1;
-    const rangeMul = cover * sizeF;
-
-    // Camouflage statique : immobile depuis un moment → plus difficile
-    const staticCamo = !moving && !fired && !onFire ? 0.65 : 1;
-    const effectiveDist = dist / (rangeMul * staticCamo);
-
-    let level = 0;
-    if (fired || onFire) {
-      // Tir ou feu : très visible
-      if (dist < SPOT_CONTACT_RANGE * 1.3) level = 1;
-      if (dist < SPOT_SILHOUETTE_RANGE * 1.2) level = 2;
-      if (dist < SPOT_IDENTIFY_RANGE * 1.1) level = 3;
-    } else {
-      if (effectiveDist < SPOT_CONTACT_RANGE) level = 1;
-      if (effectiveDist < SPOT_SILHOUETTE_RANGE) level = 2;
-      if (effectiveDist < SPOT_IDENTIFY_RANGE) level = 3;
-      // Bruit de chenilles aide le contact
-      if (moving && dist < SPOT_NOISE_RANGE * cover && level < 1) level = 1;
-    }
-
-    if (level > bestLevel) bestLevel = level;
-
-    // Progression d’identification (pour monter de silhouette → identified)
-    if (level >= 2 && dist < SPOT_IDENTIFY_RANGE * 1.3) {
-      const gain = (level >= 3 ? 1.0 : 0.45) * (1.2 - dist / (SPOT_IDENTIFY_RANGE * 1.3));
-      if (gain > bestProgressGain) bestProgressGain = gain;
-    }
+    const cover = los.hedges > 0 ? 0.45 : 1;     // les haies camouflent
+    bestCover = cover;
+    const passive = dist < SPOT_PASSIVE_RANGE * cover;
+    const noisy = dist < SPOT_NOISE_RANGE * cover && Math.abs(enemy.speed || 0) > 1.5;
+    const active = isLocal && spotActive && dist < SPOT_ACTIVE_RANGE;
+    if (passive || noisy || active) seenNow = true;
   }
-
-  // Application du meilleur résultat
-  if (bestLevel > 0) {
+  if (seenNow) {
+    enemy.spotted = true;
     enemy._spottedMemoryTimer = SPOT_MEMORY_TICKS;
-    enemy._lastKnownX = enemy.x;
-    enemy._lastKnownY = enemy.y;
-    enemy._spotVisibleNow = true;
-
-    if (bestLevel >= 2) {
-      enemy._spotProgress = Math.min(1, (enemy._spotProgress || 0) + bestProgressGain / SPOT_IDENTIFY_TIME);
-      enemy.spotLevel = enemy._spotProgress >= 1 ? 3 : bestLevel;
-    } else {
-      // contact seulement
-      if ((enemy.spotLevel || 0) < 1) enemy.spotLevel = 1;
-      // on ne fait pas redescendre un niveau supérieur juste parce qu’on n’a que du contact cette frame
-      if ((enemy.spotLevel || 0) < 2) enemy.spotLevel = 1;
-    }
+    enemy._lastKnownX = enemy.x; enemy._lastKnownY = enemy.y;
   } else if (enemy._spottedMemoryTimer > 0) {
-    enemy._spotVisibleNow = false;
-    // Mémoire : on garde le dernier niveau connu un moment
-    enemy._spottedMemoryTimer--;
-    // légère dégradation après la moitié du temps de mémoire
-    if (enemy._spottedMemoryTimer < SPOT_MEMORY_TICKS * 0.4 && enemy.spotLevel > 1) {
-      enemy.spotLevel = Math.max(1, enemy.spotLevel - 1);
-      enemy._spotProgress = 0;
-    }
-  } else {
-    enemy._spotVisibleNow = false;
-    enemy.spotLevel = 0;
-    enemy._spotProgress = 0;
-    enemy._lastKnownX = null;
-    enemy._lastKnownY = null;
-  }
-
-  enemy.spotted = !!enemy._spotVisibleNow;
+    enemy._spottedMemoryTimer--; enemy.spotted = true;
+  } else enemy.spotted = false;
 }
 
 /* hasLineOfSight : compatibilité 2D (hauteur d'œil par défaut). */

@@ -9,7 +9,7 @@
        et par le moteur de combat : boîte de collision, zones de blindage),
      • les paramètres de la tourelle et du canon.
 
-   Quand un vrai modèle 3D est fourni (js/models.js), il remplace
+   Quand un vrai modèle 3D est fourni (models/models.js), il remplace
    l'assemblage procédural, mais ces dimensions restent la référence de
    mise à l'échelle et de collision.
    ========================================================================== */

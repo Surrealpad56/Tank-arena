@@ -8,47 +8,17 @@ console.log("[TankArena] chargement : arena-camera.js");
 const Cam = (function () {
   const C = {
     yaw: 0, pitch: -0.18, dist: 13, distTarget: 13, sniper: false, shakeAmt: 0,
-    fovBase: 70, fovSniper: 16, zeroAngle: 0, zeroMeters: 200, pos: new THREE.Vector3(), dir: new THREE.Vector3(1, 0, 0),
+    fovBase: 70, fovSniper: 16, pos: new THREE.Vector3(), dir: new THREE.Vector3(1, 0, 0),
     aim: { x: 0, y: 0, z: 0, dist: 300, kind: "none", target: null }, locked: false,
-    _fov: 70, finished: false
+    _fov: 70
   };
-  const ZERO_DISTANCES = [200, 400, 600, 800, 1000];
-  const _v = new THREE.Vector3(), _o = new THREE.Vector3(), _aimDir = new THREE.Vector3();
-
-  function zoomLevels(tank) {
-    const cat = tank && tank.profile && tank.profile.cat;
-    if (cat && cat.indexOf("td_") === 0) return [4, 8, 12];
-    if (cat === "heavy") return [3, 6, 8];
-    return [3.5, 7, 10];
-  }
-  function scopeStorageKey(tank) { return "tankArenaScope:" + encodeURIComponent(tank._tankKey); }
-  function saveScopeSettings() {
-    if (!localTank) return;
-    try {
-      localStorage.setItem(scopeStorageKey(localTank), JSON.stringify({
-        zoom: localTank._scopeZoomIndex || 0,
-        zero: localTank._scopeZeroIndex || 0
-      }));
-    } catch (e) { console.warn("[TankArena] paramètres de lunette non mémorisés", e); }
-  }
-  function loadScopeSettings(tank) {
-    const levels = zoomLevels(tank);
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(scopeStorageKey(tank)) || "{}") || {}; }
-    catch (e) { console.warn("[TankArena] paramètres de lunette invalides", e); }
-    tank._scopeZoomIndex = Number.isInteger(saved.zoom) ? clamp(saved.zoom, 0, levels.length - 1) : 0;
-    tank._scopeZeroIndex = Number.isInteger(saved.zero) ? clamp(saved.zero, 0, ZERO_DISTANCES.length - 1) : 0;
-    C.fovSniper = C.fovBase / levels[tank._scopeZoomIndex];
-    C.zeroMeters = ZERO_DISTANCES[tank._scopeZeroIndex];
-    C.refreshZero();
-  }
+  const _v = new THREE.Vector3(), _o = new THREE.Vector3();
 
   C.init = function () {
     C.fovBase = Settings.get("fov"); C._fov = C.fovBase;
     const p = localTank.profile;
     C.distTarget = C.dist = Settings.get("camDist") * (0.78 + 0.22 * p.L / 6.5);
     C.yaw = localTank.alphaTank - Math.PI / 2; C.pitch = -0.2;
-    loadScopeSettings(localTank);
   };
   C.shake = function (k) { C.shakeAmt = Math.min(1.2, C.shakeAmt + k * 0.55); };
   C.look = function (dx, dy) {
@@ -58,117 +28,14 @@ const Cam = (function () {
     C.pitch = clamp(C.pitch, C.sniper ? -0.35 : -0.75, C.sniper ? 0.5 : 0.62);
   };
   C.zoom = function (d) { C.distTarget = clamp(C.distTarget + d, 5.5, 28); };
-  C.setZoomStep = function (step) {
-    if (!localTank) return;
-    const levels = zoomLevels(localTank);
-    localTank._scopeZoomIndex = clamp((localTank._scopeZoomIndex || 0) + Math.sign(step), 0, levels.length - 1);
-    C.fovSniper = C.fovBase / levels[localTank._scopeZoomIndex];
-    saveScopeSettings();
-  };
-  C.setZeroStep = function (step) {
-    if (!localTank) return;
-    localTank._scopeZeroIndex = clamp((localTank._scopeZeroIndex || 0) + Math.sign(step), 0, ZERO_DISTANCES.length - 1);
-    C.zeroMeters = ZERO_DISTANCES[localTank._scopeZeroIndex];
-    C.refreshZero();
-    saveScopeSettings();
-  };
-  C.refreshZero = function () {
-    if (!localTank || !localTank.muzzleState) return;
-    const muzzle = localTank.muzzleState(C.yaw, 0), data = getAmmoData(localTank.currentAmmo, localTank._tankModules);
-    const distance = C.zeroMeters * M2PX;
-    C.zeroAngle = solveElevation(data, muzzle, muzzle.x + Math.cos(C.yaw) * distance, muzzle.y + Math.sin(C.yaw) * distance, muzzle.z, C.yaw);
-  };
-  C.zeroOffsetPixels = function () {
-    return window.innerHeight * 0.5 / Math.tan(C._fov * Math.PI / 360) * Math.tan(C.zeroAngle || 0);
-  };
-  C.zoomLabel = function () {
-    const levels = localTank ? zoomLevels(localTank) : [1];
-    return levels[localTank ? localTank._scopeZoomIndex || 0 : 0];
-  };
   C.setSniper = function (on) {
-    if (on === C.sniper || !localTank || (on && localTank.destroyed)) return;
+    if (on === C.sniper || !localTank || localTank.destroyed) return;
     C.sniper = on;
     document.body.classList.toggle("sniper", on);
     document.getElementById("scope").classList.toggle("hidden", !on);
     if (on && window.HUD && HUD.buildScope) HUD.buildScope();
     document.getElementById("aim").style.opacity = on ? 0.0 : 1;
-    if (window.HUD && HUD.setScopeControls) HUD.setScopeControls(on);
   };
-  C.cinematic = null;
-  function removeCinematicObjects(c) {
-    if (c.shellMesh) {
-      World.S.scene.remove(c.shellMesh);
-      c.shellMesh.geometry.dispose();
-      c.shellMesh.material.dispose();
-    }
-    if (c.pathLine) {
-      World.S.scene.remove(c.pathLine);
-      c.pathLine.geometry.dispose();
-      c.pathLine.material.dispose();
-    }
-  }
-  C.startCinematic = function (kind, shot, winnerTeam, duration, onComplete) {
-    C.setSniper(false);
-    const cinematic = {
-      kind, shot, winnerTeam, duration, elapsed: 0, onComplete,
-      from: C.pos.clone(), target: new THREE.Vector3(MAP_WIDTH * PX / 2, 0, MAP_HEIGHT * PX / 2),
-      impactPlayed: false, shellMesh: null, pathLine: null
-    };
-    const path = shot && shot.path;
-    if (kind === "deathmatch" && path && path.length > 1) {
-      const points = path.map(p => new THREE.Vector3(p.x * PX, p.z * PX, p.y * PX));
-      cinematic.pathLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({ color: 0xffc15a, transparent: true, opacity: 0.72 })
-      );
-      cinematic.shellMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(0.18, 8, 6),
-        new THREE.MeshBasicMaterial({ color: 0xffe58a })
-      );
-      World.S.scene.add(cinematic.pathLine);
-      World.S.scene.add(cinematic.shellMesh);
-    }
-    if (kind === "skirmish" && World.setCinematicWinner) World.setCinematicWinner(winnerTeam);
-    C.cinematic = cinematic;
-  };
-  function updateCinematic(dt, cam) {
-    const c = C.cinematic;
-    c.elapsed = Math.min(c.duration, c.elapsed + dt);
-    const p = clamp(c.elapsed / c.duration, 0, 1), e = p * p * (3 - 2 * p);
-    cam.fov = c.kind === "deathmatch" && c.shot && c.shot.path && c.shot.path.length > 1 ? 46 : 54;
-    cam.updateProjectionMatrix();
-    if (c.kind === "deathmatch" && c.shot && c.shot.path && c.shot.path.length > 1) {
-      const path = c.shot.path, pathP = clamp(p / 0.82, 0, 1) * (path.length - 1);
-      const index = Math.min(path.length - 2, Math.floor(pathP)), part = pathP - index;
-      const a = path[index], b = path[index + 1], x = lerp(a.x, b.x, part) * PX, y = lerp(a.z, b.z, part) * PX, z = lerp(a.y, b.y, part) * PX;
-      const dx = (b.x - a.x) * PX, dy = (b.z - a.z) * PX, dz = (b.y - a.y) * PX, len = Math.hypot(dx, dy, dz) || 1;
-      const ux = dx / len, uy = dy / len, uz = dz / len;
-      cam.position.set(x - ux * 4.5, y + 1.8 - uy * 4.5, z - uz * 4.5);
-      const end = path[path.length - 1];
-      _v.set(end.x * PX, end.z * PX, end.y * PX);
-      if (c.shellMesh) c.shellMesh.position.set(x, y, z);
-      if (p >= 0.82 && !c.impactPlayed) {
-        c.impactPlayed = true;
-        FX.explosion(end.x * PX, end.z * PX, end.y * PX, 0.8);
-      }
-    } else {
-      const from = c.from, to = c.target;
-      const start = localTank && !localTank.destroyed ? localTank.view.root.position : from;
-      const end = c.kind === "deathmatch" ? new THREE.Vector3(to.x, 120, to.z) : new THREE.Vector3(to.x, 260, to.z);
-      cam.position.set(lerp(start.x, end.x, e), lerp(start.y + 8, end.y, e), lerp(start.z + 24, end.z, e));
-      _v.set(to.x, 0, to.z);
-    }
-    cam.up.set(0, 1, 0); cam.lookAt(_v); cam.updateMatrixWorld(true);
-    C.pos.copy(cam.position);
-    if (c.elapsed >= c.duration) {
-      C.cinematic = null;
-      C.finished = true;
-      removeCinematicObjects(c);
-      if (c.kind === "skirmish" && World.setCinematicWinner) World.setCinematicWinner(null);
-      if (c.onComplete) c.onComplete();
-    }
-    return true;
-  }
 
   /* Prédicat « point solide » en pixels de sim — renvoie le type d'obstacle ou null */
   function solidAt(Px, Py, Pz, exclude) {
@@ -209,10 +76,7 @@ const Cam = (function () {
 
   /* Tracé de rayon depuis la caméra */
   C.computeAim = function () {
-    const O = C.pos, ex = localTank;
-    const D = C.sniper && C.zeroAngle
-      ? _aimDir.set(Math.cos(C.pitch - C.zeroAngle) * Math.cos(C.yaw), Math.sin(C.pitch - C.zeroAngle), Math.cos(C.pitch - C.zeroAngle) * Math.sin(C.yaw))
-      : C.dir;
+    const O = C.pos, D = C.dir, ex = localTank;
     let prevT = 0, hit = null, t = 2;
     const maxT = 900;
     while (t < maxT) {
@@ -241,8 +105,6 @@ const Cam = (function () {
   };
 
   C.update = function (dt, cam) {
-    if (C.cinematic) { updateCinematic(dt, cam); return; }
-    if (C.finished) return;
     const t = localTank, P = t.profile;
     C._fov += ((C.sniper ? C.fovSniper : C.fovBase) - C._fov) * Math.min(1, dt * 12);
     cam.fov = C._fov; cam.updateProjectionMatrix();

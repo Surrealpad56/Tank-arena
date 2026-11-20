@@ -13,7 +13,7 @@ const World = (function () {
   const W = MAP_WIDTH * PX, H = MAP_HEIGHT * PX;      // 444 × 472 m
   const S = {
     renderer: null, scene: null, camera: null, sun: null, sky: null, terrain: null, terrainCanvas: null,
-    quality: null, vis: THEME_VIS[MAP_THEME], treeChunks: [], capture: [], dynamicLights: [], cinematicWinner: null, ready: false
+    quality: null, vis: Weather.vis(THEME_VIS[MAP_THEME]), treeChunks: [], capture: [], dynamicLights: [], ready: false
   };
 
   /* ───── Textures procédurales ───── */
@@ -23,7 +23,7 @@ const World = (function () {
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     if (repeat) t.repeat.set(repeat[0], repeat[1]);
-    t.anisotropy = S.renderer ? Math.min(16, S.renderer.capabilities.getMaxAnisotropy()) : 4;
+    t.anisotropy = 4;
     return t;
   }
   function speckle(ctx, w, h, base, amt, n) {
@@ -100,18 +100,11 @@ const World = (function () {
   /* ───── Sol ───── */
   function buildTerrain(canvas) {
     const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = S.renderer ? Math.min(16, S.renderer.capabilities.getMaxAnisotropy()) : 8;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = 8;
     tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
     const detail = detailTexture(); detail.repeat.set(1, 1);
-    const mat = new THREE.MeshStandardMaterial({ map: tex, bumpMap: detail, bumpScale: 0.14, roughness: 1, metalness: 0 });
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.detailMap = { value: detail };
-      sh.uniforms.detailRep = { value: new THREE.Vector2(W / 3.2, H / 3.2) };
-      sh.fragmentShader = sh.fragmentShader.replace("void main() {", "uniform sampler2D detailMap; uniform vec2 detailRep;\nvoid main() {")
-        .replace("#include <map_fragment>", `#include <map_fragment>
-          float dA = texture2D(detailMap, vUv * detailRep).r; float dB = texture2D(detailMap, vUv * detailRep * 0.21).r;
-          diffuseColor.rgb *= (0.62 + 0.42 * dA) * (0.88 + 0.24 * dB);`);
-    };
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 });
+    Look.terrain(mat, detail, W, H, S.vis);        // relief, eau, roche, pluie, neige (arena-look.js)
     /* maillage déformé par la grille de hauteurs de la carte (une case = 32 px = 1,8 m) */
     const Lr = MAP_LAYOUT, st = 2, cs = Lr.CS * st, nx = Math.ceil(MAP_WIDTH / cs), nz = Math.ceil(MAP_HEIGHT / cs), vx = nx + 1, vz = nz + 1;
     const pos = new Float32Array(vx * vz * 3), uv = new Float32Array(vx * vz * 2), idx = new Uint32Array(nx * nz * 6);
@@ -273,6 +266,7 @@ const World = (function () {
   function buildForests(scene, vis, q) {
     const geo = treeGeometry(vis.tree, vis);
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+    Look.tree(mat);                                  // balancement au vent, neige, pluie
     const spacing = 78 / Math.sqrt(q.trees);
     const CH = 1600, cols = Math.ceil(MAP_WIDTH / CH), rows = Math.ceil(MAP_HEIGHT / CH);
     const buckets = Array.from({ length: cols * rows }, () => []);
@@ -346,10 +340,7 @@ const World = (function () {
       const cp = c.cp, col = cp.contested ? CAP_COL.C : cp.owner === "A" ? CAP_COL.A : cp.owner === "B" ? CAP_COL.B : CAP_COL.N;
       for (const m of [c.disc, c.ring, c.beam, c.flag]) m.material.color.setHex(col);
       c.flag.rotation.y = Math.sin(time * 2.2) * 0.25;
-      const highlighted = S.cinematicWinner === cp.owner && !cp.contested;
-      c.ring.material.opacity = highlighted ? 0.88 + 0.12 * Math.sin(time * 4) : 0.7;
-      c.disc.material.opacity = highlighted ? 0.2 + 0.08 * Math.sin(time * 4) : 0.1;
-      c.beam.material.opacity = highlighted ? 0.3 + 0.12 * Math.sin(time * 4) : cp.contested ? 0.1 + 0.08 * Math.sin(time * 9) : 0.08;
+      c.beam.material.opacity = cp.contested ? 0.1 + 0.08 * Math.sin(time * 9) : 0.08;
       const pk = Math.round(cp.progress * 80);
       if (pk !== c.lastProg) {
         c.lastProg = pk;
@@ -376,15 +367,11 @@ const World = (function () {
   /* ───── Initialisation ───── */
   async function init(canvas, onProgress) {
     const q = Settings.quality(); S.quality = q;
-    const rend = new THREE.WebGLRenderer({ canvas, antialias: q.antialias, powerPreference: "high-performance" });
+    const postWanted = !!q.post && Settings.get("post") !== false;
+    const rend = new THREE.WebGLRenderer({ canvas, antialias: q.antialias && !postWanted, powerPreference: "high-performance" });
     rend.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
     rend.setSize(window.innerWidth, window.innerHeight);
-    // Pipeline couleur cinématique : conversion sRGB + tonemapping ACES.
-    // Disponible dans Three.js r128, sans dépendance de post-processing externe.
-    rend.outputEncoding = THREE.sRGBEncoding;
-    rend.toneMapping = THREE.ACESFilmicToneMapping;
-    rend.toneMappingExposure = 0.98;
-    rend.shadowMap.enabled = q.shadows; rend.shadowMap.type = THREE.PCFSoftShadowMap;
+    rend.shadowMap.enabled = q.shadows; rend.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     S.renderer = rend;
     const vis = S.vis;
     const scene = new THREE.Scene(); S.scene = scene;
@@ -393,14 +380,14 @@ const World = (function () {
     const cam = new THREE.PerspectiveCamera(Settings.get("fov"), window.innerWidth / window.innerHeight, 0.3, 3200); S.camera = cam;
     scene.add(cam);
 
-    scene.add(new THREE.HemisphereLight(vis.hemiSky, vis.hemiGround, vis.hemiI * 0.72));
-    const sun = new THREE.DirectionalLight(vis.sun, vis.sunI * 0.78);
+    S.hemi = new THREE.HemisphereLight(vis.hemiSky, vis.hemiGround, vis.hemiI * 0.62); scene.add(S.hemi);
+    const sun = new THREE.DirectionalLight(vis.sun, vis.sunI * 0.62);
     S.sunDir = new THREE.Vector3(...vis.sunDir).normalize();
     sun.castShadow = q.shadows;
     if (q.shadows) {
       sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
       const sc = sun.shadow.camera; const R = 62; sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 1; sc.far = 260;
-      sun.shadow.bias = -0.00025; sun.shadow.normalBias = 0.025; sun.shadow.radius = 3;
+      sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05;
     }
     scene.add(sun); scene.add(sun.target); S.sun = sun;
 
@@ -422,6 +409,12 @@ const World = (function () {
     buildForests(scene, vis, q);
     buildCapturePoints(scene);
     buildBorder(scene);
+    if (onProgress) onProgress(0.9, "Éclairage et météo…");
+    await new Promise(r => setTimeout(r, 0));
+    if (q.env) { const e = Look.environment(rend, scene, S.sky, q.envI || 0.85); if (e) S.hemi.intensity *= 0.55; }     // reflets du ciel : l'éclairage ambiant vient aussi de l'environnement
+    Weather.init(S);                                  // nuages, précipitations, foudre, vent, humidité / neige
+    Look.init(scene, rend, q, canvasTexSource);       // herbe, traces de chenilles, débris
+    Post.init(rend, scene, cam, q);                   // bloom, occlusion ambiante, étalonnage, grain, FXAA
     if (onProgress) onProgress(0.92, "Préparation des véhicules…");
     S.ready = true;
   }
@@ -430,10 +423,12 @@ const World = (function () {
     if (!S.renderer) return;
     S.renderer.setSize(window.innerWidth, window.innerHeight);
     S.camera.aspect = window.innerWidth / window.innerHeight; S.camera.updateProjectionMatrix();
+    Post.resize();
   }
 
   /* Mise à jour par image : suit la cible pour les ombres, masque les forêts hors portée. */
   function update(time, focus) {
+    const dt = Math.min(0.1, Math.max(0, time - (S._lt === undefined ? time : S._lt))); S._lt = time; S.dt = dt;
     const f = focus || S.camera.position;
     S.sun.position.copy(f).addScaledVector(S.sunDir, 120); S.sun.target.position.copy(f);
     // alignement de l'ombre sur la grille de texels (évite le scintillement)
@@ -444,11 +439,10 @@ const World = (function () {
     const far = S.quality.far, cp = S.camera.position;
     for (const im of S.treeChunks) { const d = im.userData.center.distanceTo(cp); im.visible = d < far + im.userData.radius; }
     updateCapture(time);
+    Weather.update(dt, S.camera, time); Look.update(dt, S.camera);
   }
 
-  function render() { S.renderer.render(S.scene, S.camera); }
+  function render() { Post.render(S.dt || 0.016); }
 
-  function setCinematicWinner(team) { S.cinematicWinner = team; }
-
-  return { S, init, resize, update, render, setCinematicWinner, W, H };
+  return { S, init, resize, update, render, W, H };
 })();

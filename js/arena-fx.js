@@ -13,6 +13,8 @@ const FX = (function () {
   const craters = []; let craterIdx = 0;
   let density = 1;
 
+  /* couleur de la poussière projetée : neige, sol détrempé ou terre sèche */
+  const dustCol = () => { const c = (typeof Weather !== "undefined" && Weather.cond) || {}; return c.snow ? [0.86, 0.88, 0.92] : c.wet > 0.5 ? [0.28, 0.24, 0.18] : [0.55, 0.47, 0.35]; };
   function makeSystem(max, additive) {
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(max * 3), col = new Float32Array(max * 4), siz = new Float32Array(max);
@@ -45,7 +47,7 @@ const FX = (function () {
     scene.add(SYS.smoke.pts); scene.add(SYS.glow.pts);
     flashLight = new THREE.PointLight(0xffb060, 0, 60, 2); scene.add(flashLight);
     // cratères (pool)
-    const cm = new THREE.MeshBasicMaterial({ color: 0x14100a, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const cm = new THREE.MeshBasicMaterial({ map: Look.craterTexture(), transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const cg = new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2);
     for (let i = 0; i < 48; i++) { const m = new THREE.Mesh(cg, cm.clone()); m.visible = false; m.position.y = 0.04; scene.add(m); craters.push({ m, life: 0 }); }
   }
@@ -68,6 +70,8 @@ const FX = (function () {
     emit("glow", x + dx * 0.5, y + dy * 0.5, z + dz * 0.5, 0, 0, 0, 0.07, 3.4 * k, 1.2 * k, [1, 0.85, 0.5], 1, 0, 0);
     for (let i = 0; i < cnt(12); i++) { const sp = R(2, 11) * k; emit("smoke", x, y, z, (dx + rn() * 0.9) * sp, (dy + rn() * 0.9) * sp + 0.3, (dz + rn() * 0.9) * sp, R(1.2, 2.6), R(0.5, 0.9) * k, R(2.4, 4.6) * k, [0.62, 0.6, 0.57], 0.5, -0.04, 1.6); }
     flashLight.position.set(x + dx, y + dy + 0.3, z + dz); flashLight.intensity = 6 * k; flashTimer = 0.09;
+    const gy = Look.gh(x, z);                                         // souffle du canon : nuage de poussière rasant le sol
+    if (y - gy < 5) { const dc = dustCol(); for (let i = 0; i < cnt(10); i++) { const a = Math.atan2(dz, dx) + (Math.random() - 0.5) * 2.4, sp = R(2, 7) * k; emit("smoke", x + dx * 1.2 + rn() * 1.2, gy + 0.3, z + dz * 1.2 + rn() * 1.2, Math.cos(a) * sp, R(0.2, 1.1), Math.sin(a) * sp, R(1.1, 2.3), R(0.7, 1.4) * k, R(2.6, 5) * k, dc, 0.34, -0.1, 1.5); } }
   }
   function impact(x, y, z, kind) {
     const spark = kind === "ricochet" ? [0.6, 0.85, 1] : [1, 0.62, 0.18];
@@ -84,7 +88,7 @@ const FX = (function () {
   }
   function crater(x, z, r, gy) {
     const c = craters[craterIdx]; craterIdx = (craterIdx + 1) % craters.length;
-    c.m.visible = true; c.m.position.x = x; c.m.position.z = z; if (c.y0 === undefined) c.y0 = c.m.position.y; c.m.position.y = c.y0 + (gy || 0); c.m.scale.setScalar(r * R(0.8, 1.2)); c.life = 30; c.m.material.opacity = 0.55;
+    c.m.visible = true; c.m.position.x = x; c.m.position.z = z; if (c.y0 === undefined) c.y0 = c.m.position.y; c.m.position.y = c.y0 + (gy || 0); c.m.scale.setScalar(r * R(0.8, 1.2)); c.life = 60; c.m.material.opacity = 0.9; c.m.rotation.y = Math.random() * 6.283;
   }
   function explosion(x, y, z, scale) {
     const k = scale || 1;
@@ -93,6 +97,9 @@ const FX = (function () {
     for (let i = 0; i < cnt(30); i++) { const a = Math.random() * 6.283, sp = R(6, 22) * k; emit("glow", x, y, z, Math.cos(a) * sp, R(3, 14), Math.sin(a) * sp, R(0.4, 1.0), R(0.1, 0.22), 0.02, [1, 0.85, 0.5], 1, 18, 0.2); }
     flashLight.position.set(x, y + 2, z); flashLight.intensity = 14 * k; flashTimer = 0.25;
     crater(x, z, 2.4 * k, y - 0.4);
+    if (k >= 1) { Look.Debris.burst(x, y, z, k); if (typeof Post !== "undefined") Post.pulse(Math.min(0.5, 0.18 * k)); }
+    const gy = Look.gh(x, z), dc = dustCol();                         // onde de choc : anneau de poussière qui s'étale
+    for (let i = 0; i < cnt(26); i++) { const a = (i / 26) * 6.283 + rn() * 0.2, sp = R(10, 19) * k; emit("smoke", x, gy + 0.4, z, Math.cos(a) * sp, R(0.2, 1), Math.sin(a) * sp, R(1.4, 2.8), R(1.2, 2.2) * k, R(3, 6) * k, dc, 0.4, 0.5, 2.4); }
   }
   function fire(x, y, z, k) {
     const s = k || 1;
@@ -103,7 +110,7 @@ const FX = (function () {
     emit("smoke", x + rn() * 0.6, y, z + rn() * 0.6, rn() * 0.5 + 0.6, R(1.4, 2.6), rn() * 0.5, R(2, 4), R(0.5, 0.8), R(2, 3.6), heavy ? [0.08, 0.08, 0.08] : [0.35, 0.35, 0.35], heavy ? 0.7 : 0.5, -0.1, 0.6);
   }
   function dust(x, z, strength, gy) {
-    emit("smoke", x + rn() * 0.8, 0.25 + (gy || 0), z + rn() * 0.8, rn() * 0.8 + 0.4, R(0.4, 1.3), rn() * 0.8, R(0.8, 1.6), R(0.4, 0.7), R(1.6, 2.8) * Math.min(1.6, strength), [0.55, 0.47, 0.35], 0.28, -0.1, 1.4);
+    emit("smoke", x + rn() * 0.8, 0.25 + (gy || 0), z + rn() * 0.8, rn() * 0.8 + 0.4, R(0.4, 1.3), rn() * 0.8, R(0.8, 1.6), R(0.4, 0.7), R(1.6, 2.8) * Math.min(1.6, strength), dustCol(), 0.28, -0.1, 1.4);
   }
   function smokeScreen(x, y, z) {
     for (let i = 0; i < cnt(55); i++) { const a = Math.random() * 6.283, sp = R(0.3, 3.8); emit("smoke", x, y + 0.4, z, Math.cos(a) * sp, R(0.3, 2.2), Math.sin(a) * sp, R(14, 24), R(1.6, 2.4), R(8, 13), [0.86, 0.86, 0.86], 0.85, -0.05, 0.9); }
@@ -136,7 +143,7 @@ const FX = (function () {
     SYS.smoke.mat.uniforms.uScale.value = scale; SYS.glow.mat.uniforms.uScale.value = scale;
     stepSystem(SYS.smoke, dt); stepSystem(SYS.glow, dt);
     if (flashTimer > 0) { flashTimer -= dt; flashLight.intensity *= 0.72; if (flashTimer <= 0) flashLight.intensity = 0; }
-    for (const c of craters) if (c.m.visible) { c.life -= dt; if (c.life < 6) c.m.material.opacity = Math.max(0, c.life / 6 * 0.55); if (c.life <= 0) c.m.visible = false; }
+    for (const c of craters) if (c.m.visible) { c.life -= dt; if (c.life < 8) c.m.material.opacity = Math.max(0, c.life / 8 * 0.9); if (c.life <= 0) c.m.visible = false; }
   }
 
   return { init, update, muzzleFlash, impact, groundHit, explosion, fire, damageSmoke, dust, smokeScreen, crater };

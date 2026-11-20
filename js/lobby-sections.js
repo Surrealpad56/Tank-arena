@@ -126,9 +126,15 @@ function mapTile(id, label, on) {
 }
 
 /* ───── Lancement ───── */
+/* ───── Météo et heure du combat ───── */
+const WEATHER_OPTS = [["auto", "Automatique (selon la carte)"], ["clear", "Clair"], ["cloudy", "Nuageux"], ["rain", "Pluie"], ["storm", "Orage"], ["snow", "Neige"], ["fog", "Brouillard"], ["sand", "Tempête de sable"]];
+const TOD_OPTS = [["auto", "Automatique"], ["day", "Jour"], ["dawn", "Aube"], ["dusk", "Crépuscule"], ["night", "Nuit"]];
+const weatherRows = cfg => ["weather", "tod"].map(k => `<div class="field"><div><b>${k === "weather" ? "Météo" : "Heure"}</b><small>${k === "weather" ? "Ciel, pluie, neige, brouillard, orage, vent" : "Position du soleil et lumière"}</small></div><select class="inp" data-sel="${k}">${(k === "weather" ? WEATHER_OPTS : TOD_OPTS).map(([v, l]) => `<option value="${v}" ${(cfg[k] || "auto") === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>`).join("");
+
 function launch(over) {
   const cfg = Object.assign(Store.cfg(), over || {}), tank = Store.tank();
   const a = { mode: cfg.mode, theme: cfg.theme, allies: cfg.allies, enemies: cfg.enemies, difficulty: cfg.difficulty, scoreToWin: cfg.scoreToWin, respawnBots: cfg.respawnBots };
+  a.weather = cfg.weather || "auto"; a.tod = cfg.tod || "auto";
   if (cfg.mode === "sandbox") { a.scoreToWin = 0; a.respawnBots = true; }
   if (cfg.mode === "deathmatch") { a.respawnBots = false; }
   if (cfg.mode === "test") { a.scoreToWin = 0; a.respawnBots = true; a.allies = 0; a.testTarget = cfg.testTarget; a.testBehavior = cfg.testBehavior; a.testDist = cfg.testDist; a.selfTank = cfg.testSelf || tank; }
@@ -270,6 +276,7 @@ const SecPlay = {
           <div class="field"><div><b>Nombre de cibles</b><small>Alignées face à vous</small></div>${stepper("enemies", cfg.enemies)}</div>
           <div class="field"><div><b>Distance</b><small>Entre votre char et les cibles</small></div>${seg("testDist", [[50, "50 m"], [100, "100 m"], [150, "150 m"], [250, "250 m"], [350, "350 m"]], cfg.testDist)}</div>
           <div class="field"><div><b>Précision de l'IA</b><small>Pour les cibles qui tirent</small></div>${seg("difficulty", [["easy", "Facile"], ["normal", "Normal"], ["hard", "Difficile"]], cfg.difficulty)}</div>
+          ${weatherRows(cfg)}
         </div></div>
         <div class="card" style="margin-top:16px"><h3>Carte</h3><div class="body">${maps}</div></div>`;
     } else if (mode === "sandbox" || mode === "skirmish" || mode === "deathmatch") {
@@ -278,6 +285,7 @@ const SecPlay = {
           ${mode === "skirmish" || mode === "deathmatch" ? `<div class="field"><div><b>Alliés</b><small>Chars de votre camp contrôlés par l'IA</small></div>${stepper("allies", cfg.allies)}</div>` : ""}
           <div class="field"><div><b>${mode === "sandbox" ? "Cibles" : "Ennemis"}</b><small>${mode === "sandbox" ? "Chars adverses, réapparition après destruction" : "Chars adverses contrôlés par l'IA"}</small></div>${stepper("enemies", cfg.enemies)}</div>
           <div class="field"><div><b>Difficulté de l'IA</b><small>Précision, anticipation et cadence de tir</small></div>${seg("difficulty", [["easy", "Facile"], ["normal", "Normal"], ["hard", "Difficile"]], cfg.difficulty)}</div>
+          ${weatherRows(cfg)}
           ${mode === "skirmish" ? `<div class="field"><div><b>Score à atteindre</b><small>Destructions + points de zones capturées</small></div>${seg("scoreToWin", [[5, "5"], [10, "10"], [15, "15"], [20, "20"]], cfg.scoreToWin)}</div>
           <div class="field"><div><b>Réapparition de l'IA</b><small>Les chars détruits reviennent après 9 secondes</small></div><button class="toggle ${cfg.respawnBots ? "on" : ""}" data-a="toggleRespawn" aria-label="Réapparition"></button></div>` : ""}
           ${mode === "deathmatch" ? `<div class="field"><div><b>Objectif</b><small>Éliminer toute l'équipe adverse, sans capture de zones.</small></div><span class="tag amber">Deathmatch</span></div>` : ""}
@@ -594,7 +602,7 @@ const SecCareer = {
 /* ===================================================================
    06 RÉGLAGES
    =================================================================== */
-const QDESC = { low: "Sans ombres · fluide", medium: "Ombres légères", high: "Ombres nettes", ultra: "ACES · 4K textures · ombres 4K · distance étendue" };
+const QDESC = { low: "Sans ombres · fluide", medium: "Ombres légères", high: "Ombres nettes", ultra: "Ombres et sol détaillés" };
 const SecSettings = {
   render(el) {
     const S = Settings.all(), sl = (k, mn, mx, st, fmtv) => `<input type="range" min="${mn}" max="${mx}" step="${st}" value="${S[k]}" data-a="slide" data-k="${k}"><span class="val num" id="v-${k}">${fmtv(S[k])}</span>`;
@@ -605,7 +613,11 @@ const SecSettings = {
         <div class="qual">${["low", "medium", "high", "ultra"].map(q => `<button class="${S.quality === q ? "on" : ""}" data-a="quality" data-q="${q}"><b>${{ low: "Basse", medium: "Moyenne", high: "Haute", ultra: "Ultra" }[q]}</b><small>${QDESC[q]}</small></button>`).join("")}</div>
         <div class="field"><div><b>Champ de vision</b><small>Caméra de poursuite</small></div><div style="display:flex;align-items:center;gap:10px">${sl("fov", 55, 95, 1, v => v + "°")}</div></div>
         <div class="field"><div><b>Distance de caméra</b><small>Valeur par défaut (molette en combat)</small></div><div style="display:flex;align-items:center;gap:10px">${sl("camDist", 8, 22, 1, v => v + " m")}</div></div>
-        <div class="field"><div><b>Compteur d'images par seconde</b></div>${tg("showFps")}</div></div></div>
+        <div class="field"><div><b>Compteur d'images par seconde</b></div>${tg("showFps")}</div>
+        <div class="field"><div><b>Effets cinématiques</b><small>Bloom, occlusion ambiante, étalonnage, grain (qualité Moyenne ou plus)</small></div>${tg("post")}</div>
+        <div class="field"><div><b>Résolution dynamique</b><small>Baisse l'échelle de rendu si la fluidité chute, la remonte ensuite</small></div>${tg("dynres")}</div>
+        <div class="field"><div><b>Météo animée</b><small>Nuages, pluie, neige, foudre, vent</small></div>${tg("weatherFx")}</div>
+        <div class="field"><div><b>Mode sans échec graphique</b><small>Désactive tous les effets avancés si l'écran est noir, blanc ou saccadé</small></div><button class="toggle ${Settings.safe() ? "on" : ""}" data-a="safe"></button></div></div></div>
       <div class="card" style="margin-top:18px"><h3>Contrôles et son</h3><div class="body">
         <div class="field"><div><b>Sensibilité de la souris</b><small>Caméra et visée</small></div><div style="display:flex;align-items:center;gap:10px">${sl("sens", 0.3, 2.5, 0.1, v => (+v).toFixed(1) + "×")}</div></div>
         <div class="field"><div><b>Inverser l'axe vertical</b></div>${tg("invertY")}</div>
@@ -620,7 +632,7 @@ const SecSettings = {
           <li><b>Jouer → Multijoueur → Déployer</b> : le premier crée la partie, les autres la rejoignent.</li>
         </ol><div id="mh-box"></div></div></div>
       <div class="card" style="margin-top:18px"><h3>Modèles 3D <span class="num muted">${keys.filter(k => man[k]).length} / ${keys.length} fournis</span></h3><div class="body">
-        <div class="note" style="margin-bottom:10px">Déposez vos fichiers <b>.glb / .gltf / .obj</b> dans <b>models/</b> puis déclarez-les dans <b>js/models.js</b>. Un char sans modèle utilise l'assemblage procédural de sa catégorie. Un serveur HTTP local est nécessaire pour charger les fichiers.</div>
+        <div class="note" style="margin-bottom:10px">Déposez vos fichiers <b>.glb / .gltf / .obj</b> dans <b>models/</b> puis déclarez-les dans <b>models/models.js</b>. Un char sans modèle utilise l'assemblage procédural de sa catégorie. Un serveur HTTP local est nécessaire pour charger les fichiers.</div>
         <table class="mtable">${keys.map(k => `<tr><td>${escHTML(k)}</td><td><span class="tag ${man[k] ? "ok" : ""}">${man[k] ? "Modèle déclaré" : "Procédural · " + getTankProfile(k).catLabel}</span></td></tr>`).join("")}</table></div></div>
       <div class="card" style="margin-top:18px"><h3>Données</h3><div class="body">
         <div class="field"><div><b>Réinitialiser la recherche</b><small>Efface les véhicules acquis, l'XP disponible et la campagne</small></div><button class="btn sm danger" data-a="rsRes">Réinitialiser</button></div>
@@ -634,10 +646,10 @@ const SecSettings = {
     el.querySelectorAll("input[type=range]").forEach(r => r.oninput = () => { const k = r.dataset.k; Settings.set(k, +r.value); const o = $("#v-" + k); o.textContent = { fov: v => v + "°", camDist: v => v + " m", sens: v => (+v).toFixed(1) + "×", volume: v => Math.round(v * 100) + " %" }[k](+r.value); });
     on(el, {
       mhStart: async () => { await MultiHost.call("POST"); MultiHost.bind(el); }, mhStop: async () => { await MultiHost.call("DELETE"); MultiHost.bind(el); }, mhCopy: () => MultiHost.copy(),
-      quality: d => { Settings.set("quality", d.q); re(); }, tog: d => { Settings.set(d.k, !Settings.get(d.k)); re(); },
+      safe: () => { Settings.setSafe(!Settings.safe()); location.reload(); }, quality: d => { Settings.set("quality", d.q); re(); }, tog: d => { Settings.set(d.k, !Settings.get(d.k)); re(); },
       rsRes: () => confirmBox("Réinitialiser la recherche ?", "Les véhicules recherchés, l'XP disponible et la progression de campagne seront effacés. Les statistiques sont conservées.", "Réinitialiser", () => { Store.resetResearch(); refreshAll(); re(); }, true),
       rsAll: () => confirmBox("Effacer tout le profil ?", "Recherche, statistiques, historique et jalons seront définitivement supprimés.", "Tout effacer", () => { Store.resetAll(); refreshAll(); re(); }, true),
-      rsSet: () => { Settings.reset(); re(); toast("Réglages rétablis"); }, devxp: () => { refreshAll();}
+      rsSet: () => { Settings.reset(); re(); toast("Réglages rétablis"); }, devxp: () => { Store.addXP(1000); refreshAll(); toast("+1 000 XP"); }
     });
   }
 };

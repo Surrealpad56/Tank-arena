@@ -91,7 +91,7 @@ const Store = (function () {
   S.readyMilestones = () => S.milestones().filter(m => m.ready).length;
 
   /* ───── Configuration de partie ───── */
-  const CFG_DEF = { mode: "skirmish", theme: "random", allies: 1, enemies: 2, difficulty: "normal", scoreToWin: 10, respawnBots: true, mission: 0, testTarget: "random", testBehavior: "static", testDist: 150, testSelf: "" };
+  const CFG_DEF = { mode: "skirmish", theme: "random", allies: 1, enemies: 2, difficulty: "normal", scoreToWin: 10, respawnBots: true, mission: 0, weather: "auto", tod: "auto", testTarget: "random", testBehavior: "static", testDist: 150, testSelf: "" };
   S.cfg = function () { let c = {}; try { c = JSON.parse(L.getItem("lobbyConfig") || "{}"); } catch (e) { } const r = Object.assign({}, CFG_DEF, c); if (r.mode === "online") r.mode = "skirmish"; if (r.theme !== "random" && !MAP_THEMES.includes(r.theme)) r.theme = "random"; return r; };
   S.setCfg = function (patch) { const c = Object.assign(S.cfg(), patch); L.setItem("lobbyConfig", JSON.stringify(c)); return c; };
 

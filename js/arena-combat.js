@@ -37,7 +37,6 @@ const Rules = (function () {
 })();
 function captureScores() { return Rules.captureScores(); }
 let SCORE_TO_WIN_LIVE = Rules.scoreToWin;
-let lastDeathmatchShot = null;
 
 function livingTanksForTeam(team) {
   return items.filter(it => it instanceof Tank && !it.destroyed && it.teamId === team).length;
@@ -118,12 +117,11 @@ function respawnBot(bot) {
   const sp = bot._home ? { x: bot._home.x, y: bot._home.y, heading: bot._home.heading } : getSpawnPoint(bot.teamId, bot._slot, bot._n);
   bot.x = bot.px = sp.x; bot.y = bot.py = sp.y; bot.alphaTank = bot.pAT = sp.heading; bot.alphaTurret = bot.pATu = sp.heading - Math.PI / 2;
   bot.destroyed = false; bot.lat = 0; bot._flipT = 0; bot.accRoll = 0; bot.speed = 0; bot.angularVelocity = 0; bot.reload = 60; bot.gunElevation = bot.pEl = 0;
-  bot.resetModules(); bot.view.setDestroyed(false); bot.spotted = false; bot.spotLevel = 0; bot._spotProgress = 0; bot._spottedMemoryTimer = 0; bot._target = null;
+  bot.resetModules(); bot.view.setDestroyed(false); bot.spotted = false; bot._target = null;
 }
 
 /* ───────────── Mort / réapparition du joueur ───────────── */
 function onLocalPlayerDestroyed() {
-  if (ARENA_CFG.mode === "deathmatch" && localTank._lastHitShell) lastDeathmatchShot = localTank._lastHitShell;
   if (teamId === "A") teamScore.B++; else teamScore.A++;
   if (gameOver) return;
   Cam.setSniper(false);
@@ -142,7 +140,6 @@ function respawnLocalPlayer() {
 }
 /* Un char non-joueur vient d'être détruit */
 function onTankKilled(tank, killer) {
-  if (ARENA_CFG.mode === "deathmatch" && tank._lastHitShell) lastDeathmatchShot = tank._lastHitShell;
   const kn = killer ? (killer === localTank ? "Vous" : (killer._playerName || killer._tankKey)) : "Un tir";
   if (killer && killer === localTank) HUD.event("kill", `Vous avez détruit ${tank._playerName || tank._tankKey}`);
   else if (killer && tank.teamId === localTank.teamId) HUD.event("kill", `${tank._playerName || tank._tankKey} a été détruit`);
@@ -163,7 +160,6 @@ function switchAmmo(type) {
   const crewRatio = t.crewAlive / Object.keys(t.modules.crew).length, crewP = crewRatio < 1 ? 1 + (1 - crewRatio) * 1.5 : 1, loaderP = t.modules.crew.loader ? 1 : 2.5;
   t.reload = Math.round(baseTicks * crewP * loaderP * (t.reload <= 5 ? 0.8 : 0.5)); t.reloadMax = Math.max(t.reload, 1);
   t.currentAmmo = type; t._aimKey = null;
-  if (Cam && Cam.refreshZero) Cam.refreshZero();
 }
 
 /* ───────────── IA ───────────── */
@@ -360,26 +356,13 @@ function persistMatchResults(win, reason) {
 function endMatch(win, reason) {
   if (gameOver) return; gameOver = true; Rules.over = true;
   Cam.setSniper(false);
-  Game.paused = true;
-  Input.fire = Input.up = Input.down = Input.left = Input.right = Input.brake = Input.repair = false;
-  if (document.pointerLockElement) document.exitPointerLock();
   const res = persistMatchResults(win, reason);
   const acc = battleStats.shotsFired > 0 ? Math.round(battleStats.shotsHit / battleStats.shotsFired * 100) + " %" : "—";
   const mm = t => Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0");
   const canNext = true;
-  const endData = {
+  HUD.showEnd({
     win, title: win ? "Victoire" : "Défaite", sub: reason || "", xp: res.xp, xpNote: res.note,
     stats: [["Éliminations", battleStats.kills], ["Dégâts infligés", Math.round(battleStats.damageDealt).toLocaleString("fr-FR")], ["Précision", acc], ["Destructions subies", battleStats.deaths], ["Score", teamScore.A + " – " + teamScore.B], ["Durée", mm(Rules.time)]],
     again: canNext ? "Rejouer" : "Retour au QG", onAgain: canNext ? () => location.reload() : () => location.href = "lobby.html"
-  };
-  const cinematicMode = ARENA_CFG.mode === "deathmatch" || ARENA_CFG.mode === "skirmish";
-  if (cinematicMode) {
-    const kind = ARENA_CFG.mode;
-    const duration = kind === "deathmatch" ? 4.4 : 4.2;
-    HUD.showCinematic(kind, duration);
-    Cam.startCinematic(kind, kind === "deathmatch" ? lastDeathmatchShot : null, win ? teamId : (teamId === "A" ? "B" : "A"), duration, () => {
-      HUD.hideCinematic();
-      HUD.showEnd(endData);
-    });
-  } else HUD.showEnd(endData);
+  });
 }

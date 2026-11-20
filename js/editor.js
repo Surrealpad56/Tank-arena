@@ -249,6 +249,7 @@
       el.innerHTML = sec("turret", "Tourelle") + sec("hull", "Caisse") + `<div class="muted">Chaque détail est placé automatiquement d'après les dimensions du char, puis reste modifiable comme n'importe quelle pièce.</div>`;
     } else {
       const p = profileOf(d.base);
+      const pa = d.paint || (d.paint = {}); if (pa.wear === undefined) { pa.wear = 0.35; pa.mud = 0.3; pa.dust = 0.2; pa.rust = 0.08; }
       el.innerHTML = `<h4>Gabarit de référence</h4><label class="f" style="display:block"><select id="basesel" style="width:100%;background:var(--raised);color:var(--text);border:1px solid var(--line-strong);padding:5px">${tankSelectHTML(d.base, true)}</select></label>
         <div class="muted" id="stats" style="margin-top:6px"></div>
         <h4>Axes de pivot</h4>${fnum("Tourelle X", "d:tp.0", 0.01)}${fnum("Tourelle Y", "d:tp.1", 0.01)}${fnum("Canon X", "d:gp.0", 0.01)}${fnum("Canon Y", "d:gp.1", 0.01)}
@@ -256,6 +257,8 @@
         <h4>Peinture</h4><div class="pal">${TD.PALETTES.map((c, i) => `<button data-a="pal" data-v="${i}" title="${c.n}" style="background:${c.c1}"><i style="background:${c.c2}"></i></button>`).join("")}</div>
         ${fcol("Couleur 1", "d:paint.c1")}${fcol("Couleur 2", "d:paint.c2")}${fcol("Couleur 3", "d:paint.c3")}
         ${fsel("Camouflage", "d:paint.camo", Object.entries(TD.CAMOS))}<div class="btnrow"><button class="btn sm" data-a="seed">Autre motif</button></div>
+        <h4>Usure et saleté</h4>${frange("Usure", "d:paint.wear", 0, 1, 0.01)}${frange("Boue", "d:paint.mud", 0, 1, 0.01)}${frange("Poussière", "d:paint.dust", 0, 1, 0.01)}${frange("Rouille", "d:paint.rust", 0, 1, 0.01)}
+        <div class="muted">Éraflures, boue sur le bas de caisse et les chenilles, poussière, coulures de rouille : visibles aussi en jeu, avec la météo.</div>
         <h4>Repartir d'un modèle</h4><label class="f" style="display:block"><select id="stylesel" style="width:100%;background:var(--raised);color:var(--text);border:1px solid var(--line-strong);padding:5px">${Object.entries(TD.STYLES).map(([k, s]) => `<option value="${k}">${s.n}</option>`).join("")}</select></label>
         <div class="btnrow"><button class="btn sm danger" data-a="regen">Remplacer toutes les pièces</button></div>
         <div class="muted" style="margin-top:6px">Génère un char complet aux dimensions du gabarit choisi : un bon point de départ à affiner.</div>`;
