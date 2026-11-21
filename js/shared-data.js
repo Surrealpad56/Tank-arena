@@ -202,35 +202,35 @@ const TANK_MODULES =
   },
   "Matilda Mk.II": {
     "canon": true,
-    "speed": 24,
-    "reverseSpeed": -3,
+    "speed": 240,
+    "reverseSpeed": -300,
     "crew": 4,
-    "turretRotSpeed": 12,
+    "turretRotSpeed": 1200,
     "weightTons": 26.9,
-    "reloadSec": 5,
+    "reloadSec": 0.5,
     "armor": {
       "hullFront": {
-        "thickness": 78,
+        "thickness": 78000,
         "angle": 0
       },
       "hullSide": {
-        "thickness": 70,
+        "thickness": 70000,
         "angle": 0
       },
       "hullRear": {
-        "thickness": 55,
+        "thickness": 55000,
         "angle": 20
       },
       "turretFront": {
-        "thickness": 75,
+        "thickness": 75000,
         "angle": 0
       },
       "turretSide": {
-        "thickness": 75,
+        "thickness": 75000,
         "angle": 0
       },
       "turretRear": {
-        "thickness": 75,
+        "thickness": 75000,
         "angle": 0
       }
     },
@@ -246,14 +246,14 @@ const TANK_MODULES =
         "fuze": false
       },
       "APDS": {
-        "muzzleVelocity": 1220,
-        "mass": 0.76,
-        "caliber": 40,
-        "drag": 0.24,
-        "penetration": 96,
-        "damage": 40,
-        "explosion": 0.1,
-        "fuze": false
+        "muzzleVelocity": 122000,
+        "mass": 900,
+        "caliber": 4000,
+        "drag": 0.01,
+        "penetration": 9600000,
+        "damage": 4000000,
+        "explosion": 999,
+        "fuze": true
       },
       "HE": {
         "muzzleVelocity": 610,
