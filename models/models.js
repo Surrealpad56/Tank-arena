@@ -12,10 +12,10 @@
     file: "models/tiger_i_pzkpfw_vi_ausf._e.glb",
     forward: "+y"   // avant du modèle = +X (axe du jeu)
     // Optionnel si la détection auto échoue :
-    // turret: "nom_du_noeud_tourelle",
-    // gun: "nom_du_noeud_canon",
-    // yaw: 0,      // rotation supplémentaire en degrés
-    // flipX: false
+    turret: "nom_du_noeud_tourelle",
+    gun: "nom_du_noeud_canon",
+    yaw: 0,      // rotation supplémentaire en degrés
+    flipX: false
   };
 
   // Si tu veux le même modèle pour la version H :
