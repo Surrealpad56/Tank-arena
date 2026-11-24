@@ -417,7 +417,7 @@ function serveStatic(req, res, file) {
     const ext = path.extname(file).toLowerCase(), isText = TEXT_EXT.has(ext), type = MIME[ext] || "application/octet-stream";
     const etag = '"' + st.size.toString(36) + "-" + Math.round(st.mtimeMs).toString(36) + '"';
     const local = isLocalReq(req);
-    const cc = local ? "no-cache" : (ext === ".html" ? "public, max-age=60" : "public, max-age=600");
+    const cc = "no-cache, no-store, must-revalidate";
     if (req.headers["if-none-match"] === etag) { res.writeHead(304, { ETag: etag, "Cache-Control": cc }); return res.end(); }
     const head = { "Content-Type": type, "Cache-Control": cc, ETag: etag, Vary: "Accept-Encoding" };
     if (!isText || req.method === "HEAD") {          // binaires (modèles 3D, images) : envoi en flux
