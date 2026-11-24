@@ -10,7 +10,7 @@
   // Tiger I Ausf. E
   global.TANK_MODEL_MANIFEST["Pz.Kpfw. VI Tiger Ausf. E"] = {
     file: "models/tiger_i_pzkpfw_vi_ausf._e.glb",
-    forward: "-x"   // avant du modèle = +X (axe du jeu)
+    forward: "+y"   // avant du modèle = +X (axe du jeu)
     // Optionnel si la détection auto échoue :
     // turret: "nom_du_noeud_tourelle",
     // gun: "nom_du_noeud_canon",
