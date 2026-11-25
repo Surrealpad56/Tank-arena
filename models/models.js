@@ -12,7 +12,7 @@
     file: "models/tiger_i_pzkpfw_vi_ausf._e.glb",
     forward: "-y"   // avant du modèle = +X (axe du jeu)
     // Optionnel si la détection auto échoue :
-    turret: "Object471",
+    //turret: "Object471",
     //gun: "nom_du_noeud_canon",
     //yaw: 0,      // rotation supplémentaire en degrés
     //flipX: false
