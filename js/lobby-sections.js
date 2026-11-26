@@ -410,9 +410,11 @@ const SecAtelier = {
     el.innerHTML = `<div class="card cut"><h3>Atelier de chars</h3><div class="body">
         <div class="muted" style="margin-bottom:12px;font-size:14px">Modélisez vos propres véhicules en 3D (caisse, tourelle, canon, chenilles, détails, peinture et camouflage), puis activez-les : ils remplacent l'apparence du char choisi dans le hangar et au combat. Les statistiques ne changent pas.</div>
         <button class="btn primary" data-a="open">Ouvrir l'atelier</button></div></div>
+        <button class="btn" data-a="cinematics">Éditeur de cinématique</button>
       <div class="card" style="margin-top:16px"><h3>Mes chars <span class="num muted">${all.length}</span></h3><div class="body">${all.map(d => { const on = Object.keys(act).filter(k => act[k] === d.id); return `<div class="field"><div><b>${escHTML(d.name)}</b><small>${d.parts.length} pièces${on.length ? " · actif sur " + on.map(escHTML).join(", ") : " · non utilisé en jeu"}</small></div><div style="display:flex;gap:8px"><button class="btn" data-a="edit" data-id="${d.id}">Modifier</button><button class="btn" data-a="del" data-id="${d.id}">Supprimer</button></div></div>`; }).join("") || `<div class="muted">Aucun char pour l'instant : ouvrez l'atelier, choisissez un style de départ et commencez à modeler.</div>`}</div></div>`;
     on(el, {
       open: () => { location.href = "editor.html"; }, edit: d => { location.href = "editor.html?id=" + d.id; },
+      cinematics: () => {location.href = "cinematic-editor.html";},
       del: d => { if (confirm("Supprimer ce char ?")) { TankDesigns.remove(d.id); SecAtelier.render(el); } }
     });
   }
