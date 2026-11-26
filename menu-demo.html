@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tank Arena — Menu (essai)</title>
+  <style>
+    :root {
+      --bg: #0a0e11;
+      --panel: rgba(12, 16, 20, 0.78);
+      --panel-border: rgba(190, 215, 230, 0.22);
+      --text: #e8eef2;
+      --dim: #93a1ab;
+      --amber: #ffb000;
+      --line: rgba(190, 215, 230, 0.12);
+      --font-d: "Roboto Condensed", "Arial Narrow", Arial, sans-serif;
+      --font-u: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: #0a0e11; color: var(--text); font-family: var(--font-u); }
+    #canvas-wrap { position: fixed; inset: 0; z-index: 0; background:
+      radial-gradient(ellipse at 30% 60%, #3a3228 0%, #1a1510 45%, #0a0e11 100%); }
+    #canvas-wrap canvas { display: block; width: 100%; height: 100%; }
+
+    #veil {
+      position: fixed; inset: 0; z-index: 1; pointer-events: none;
+      background: radial-gradient(ellipse at 32% 55%, transparent 15%, rgba(0,0,0,0.4) 75%);
+    }
+
+    #ui {
+      position: fixed;
+      z-index: 2;
+      left: 50%;
+      top: 50%;
+      transform: translate(-8%, -50%);
+      width: min(400px, 90vw);
+      max-height: min(78vh, 620px);
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
+      overflow: hidden;
+    }
+    #ui::before {
+      content: "";
+      position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--amber);
+    }
+    #ui-head {
+      padding: 16px 22px 12px 26px;
+      border-bottom: 1px solid var(--line);
+    }
+    #ui-head .tag {
+      font: 600 11px var(--font-d);
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--amber);
+    }
+    #ui-head h1 {
+      font: 700 22px/1.15 var(--font-d);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    #ui-body {
+      padding: 14px 18px 18px 22px;
+      overflow-y: auto;
+      flex: 1;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .nav-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .nav-list button {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 1px solid transparent;
+      border-left: 3px solid transparent;
+      color: var(--text);
+      padding: 12px 14px;
+      font: 600 15px var(--font-d);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .nav-list button:hover, .nav-list button:active {
+      background: rgba(255,176,0,0.08);
+      border-color: rgba(255,176,0,0.25);
+      border-left-color: var(--amber);
+      color: var(--amber);
+    }
+    .nav-list button small {
+      display: block;
+      margin-top: 3px;
+      font: 500 12px var(--font-u);
+      letter-spacing: 0;
+      text-transform: none;
+      color: var(--dim);
+    }
+
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .btn {
+      background: transparent;
+      border: 1px solid rgba(190,215,230,0.28);
+      color: var(--text);
+      padding: 10px 16px;
+      font: 600 13px var(--font-d);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:hover, .btn:active { border-color: var(--amber); color: var(--amber); }
+    .btn.primary { background: var(--amber); border-color: var(--amber); color: #121212; }
+    .btn.primary:hover, .btn.primary:active { background: #ffc233; color: #121212; }
+    .btn.ghost { border-color: transparent; color: var(--dim); }
+
+    .field {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+    }
+    .field span { color: var(--dim); }
+    .field b { font-weight: 600; }
+    .seg { display: inline-flex; border: 1px solid rgba(190,215,230,0.28); }
+    .seg button {
+      background: none; border: 0; border-right: 1px solid rgba(190,215,230,0.2);
+      padding: 6px 12px; color: var(--dim); font: 600 12px var(--font-d);
+      letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+    }
+    .seg button:last-child { border-right: 0; }
+    .seg button.on { background: var(--amber); color: #121212; }
+    .muted { color: var(--dim); font-size: 13px; line-height: 1.45; margin-bottom: 10px; }
+    .hidden { display: none !important; }
+
+    #intro {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; align-items: flex-end; justify-content: center;
+      padding-bottom: 14vh;
+      background: #0a0e11;
+      transition: opacity 0.7s ease;
+    }
+    #intro.ready {
+      background: linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 50%);
+    }
+    #intro.fade { opacity: 0; pointer-events: none; }
+    #intro .title {
+      text-align: center;
+      font: 700 36px/1 var(--font-d);
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: #fff;
+      text-shadow: 0 4px 24px rgba(0,0,0,0.8);
+    }
+    #intro .sub {
+      margin-top: 10px;
+      text-align: center;
+      font: 600 12px var(--font-d);
+      letter-spacing: 0.32em;
+      text-transform: uppercase;
+      color: var(--amber);
+    }
+    #loadbar {
+      width: min(260px, 55vw); height: 3px; margin: 18px auto 0;
+      background: rgba(255,255,255,0.12);
+    }
+    #loadbar i {
+      display: block; height: 100%; width: 0%;
+      background: var(--amber);
+      transition: width 0.1s linear;
+    }
+    #hint {
+      position: fixed; left: 12px; bottom: 10px; z-index: 3;
+      font-size: 11px; color: rgba(255,255,255,0.3);
+    }
+    #err {
+      position: fixed; left: 12px; top: 12px; z-index: 5;
+      max-width: 90vw; padding: 8px 12px;
+      background: rgba(120,20,20,0.85); color: #fff; font-size: 12px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-wrap"></div>
+  <div id="veil"></div>
+  <div id="err"></div>
+
+  <div id="intro">
+    <div>
+      <div class="title">Tank Arena</div>
+      <div class="sub">Déploiement</div>
+      <div id="loadbar"><i id="loadfill"></i></div>
+    </div>
+  </div>
+
+  <div id="ui" class="hidden">
+    <div id="ui-head">
+      <div class="tag" id="ui-tag">Menu</div>
+      <h1 id="ui-title">Principal</h1>
+    </div>
+    <div id="ui-body"></div>
+  </div>
+
+  <div id="hint">Essai menu — panneau flottant</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+(function () {
+  'use strict';
+
+  var PAGES = {
+    principal: {
+      tag: '01',
+      title: 'Principal',
+      html:
+        '<p class="muted">Poste de commandement. Choisissez une section.</p>' +
+        '<ul class="nav-list">' +
+        '<li><button type="button" data-go="hangar">Hangar<small>Chars, recherche, déploiement</small></button></li>' +
+        '<li><button type="button" data-go="compte">Compte<small>Profil, amis, sauvegarde</small></button></li>' +
+        '<li><button type="button" data-go="reglages">Réglages<small>Options et atelier</small></button></li>' +
+        '</ul>'
+    },
+    hangar: {
+      tag: '02',
+      title: 'Hangar',
+      html:
+        '<p class="muted">Sélection du véhicule uniquement dans l\'arbre de recherche.</p>' +
+        '<div class="field"><span>Véhicule actif</span><b>Tiger I</b></div>' +
+        '<div class="field"><span>Nation · rang</span><b>Allemagne · VI</b></div>' +
+        '<p class="muted" style="margin-top:12px">Arbre de recherche (aperçu)</p>' +
+        '<div class="seg" style="margin-bottom:8px">' +
+        '<button type="button" class="on">GER</button><button type="button">USSR</button>' +
+        '<button type="button">USA</button><button type="button">UK</button></div>' +
+        '<p class="muted">[ Zone arbre — à brancher ]</p>' +
+        '<div class="btn-row">' +
+        '<button type="button" class="btn primary" data-go="gamemode">Jouer</button>' +
+        '<button type="button" class="btn" data-go="ameliorations">Améliorations</button>' +
+        '<button type="button" class="btn ghost" data-go="principal">Retour</button></div>'
+    },
+    ameliorations: {
+      tag: '03',
+      title: 'Améliorations',
+      html:
+        '<p class="muted">Obus et interventions mécaniques réalistes.</p>' +
+        '<div class="field"><span>Obus AP</span><b>24</b></div>' +
+        '<div class="field"><span>Obus HE</span><b>8</b></div>' +
+        '<div class="field"><span>Obus APCR</span><b>6</b></div>' +
+        '<p class="muted" style="margin-top:12px">Interventions</p>' +
+        '<div class="field"><span>Révision moteur</span><button type="button" class="btn" style="padding:4px 10px">Appliquer</button></div>' +
+        '<div class="field"><span>Graissage tourelle</span><button type="button" class="btn" style="padding:4px 10px">Appliquer</button></div>' +
+        '<div class="field"><span>Réglage optique</span><button type="button" class="btn" style="padding:4px 10px">Appliquer</button></div>' +
+        '<div class="btn-row"><button type="button" class="btn ghost" data-go="hangar">Retour hangar</button></div>'
+    },
+    gamemode: {
+      tag: '04',
+      title: 'Mode de jeu',
+      html:
+        '<p class="muted">Choix du mode et des règles avant déploiement.</p>' +
+        '<ul class="nav-list">' +
+        '<li><button type="button" data-mode="test">Champ d\'essai<small>Cibles, sans XP</small></button></li>' +
+        '<li><button type="button" data-mode="skirmish">Escarmouche<small>Équipes · zones</small></button></li>' +
+        '<li><button type="button" data-mode="deathmatch">Deathmatch<small>Élimination</small></button></li>' +
+        '<li><button type="button" data-mode="campaign">Campagne<small>Missions</small></button></li>' +
+        '<li><button type="button" data-mode="multi">Multijoueur<small>Salons</small></button></li>' +
+        '</ul>' +
+        '<div class="btn-row">' +
+        '<button type="button" class="btn primary" id="btn-deploy">Déployer</button>' +
+        '<button type="button" class="btn ghost" data-go="hangar">Retour</button></div>'
+    },
+    compte: {
+      tag: '05',
+      title: 'Compte',
+      html:
+        '<div class="field"><span>Pseudo</span><b>Commandant</b></div>' +
+        '<div class="field"><span>Niveau</span><b>12</b></div>' +
+        '<div class="field"><span>XP</span><b>4 820</b></div>' +
+        '<p class="muted" style="margin-top:12px">Amis</p>' +
+        '<div class="field"><span>En ligne</span><b>0</b></div>' +
+        '<p class="muted">Gestion compte / amis — à brancher.</p>' +
+        '<div class="btn-row"><button type="button" class="btn ghost" data-go="principal">Retour</button></div>'
+    },
+    reglages: {
+      tag: '06',
+      title: 'Réglages',
+      html:
+        '<div class="field"><span>Qualité</span><span class="seg">' +
+        '<button type="button" class="on">Moy.</button><button type="button">Haute</button></span></div>' +
+        '<div class="field"><span>Plein écran</span><span class="seg">' +
+        '<button type="button">Off</button><button type="button" class="on">On</button></span></div>' +
+        '<div class="field"><span>Volume</span><b>70 %</b></div>' +
+        '<div class="btn-row">' +
+        '<button type="button" class="btn" id="btn-atelier">Atelier</button>' +
+        '<button type="button" class="btn ghost" data-go="principal">Retour</button></div>'
+    }
+  };
+
+  var ui = document.getElementById('ui');
+  var uiBody = document.getElementById('ui-body');
+  var uiTitle = document.getElementById('ui-title');
+  var uiTag = document.getElementById('ui-tag');
+  var intro = document.getElementById('intro');
+  var loadfill = document.getElementById('loadfill');
+  var errEl = document.getElementById('err');
+
+  function showPage(id) {
+    var p = PAGES[id];
+    if (!p) return;
+    uiTag.textContent = p.tag;
+    uiTitle.textContent = p.title;
+    uiBody.innerHTML = p.html;
+    ui.classList.remove('hidden');
+  }
+
+  uiBody.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-go]');
+    if (t) {
+      showPage(t.getAttribute('data-go'));
+      return;
+    }
+    if (e.target.id === 'btn-deploy') {
+      window.alert('Déploiement → arena.html (à brancher)');
+    }
+    if (e.target.id === 'btn-atelier') {
+      window.alert('Atelier → editor.html (inchangé)');
+    }
+    var mode = e.target.closest('[data-mode]');
+    if (mode) {
+      var all = uiBody.querySelectorAll('[data-mode]');
+      for (var i = 0; i < all.length; i++) all[i].style.borderLeftColor = 'transparent';
+      mode.style.borderLeftColor = '#ffb000';
+    }
+  });
+
+  /* Intro indépendante de Three.js */
+  var INTRO_MS = 12000;
+  var t0 = Date.now();
+  var introDone = false;
+
+  function endIntro() {
+    if (introDone) return;
+    introDone = true;
+    intro.classList.add('fade');
+    setTimeout(function () {
+      intro.style.display = 'none';
+      showPage('principal');
+    }, 700);
+  }
+
+  function tickIntro() {
+    var p = Math.min(1, (Date.now() - t0) / INTRO_MS);
+    loadfill.style.width = (p * 100).toFixed(1) + '%';
+    if (p >= 1) endIntro();
+    else requestAnimationFrame(tickIntro);
+  }
+  requestAnimationFrame(tickIntro);
+
+  function showErr(msg) {
+    errEl.style.display = 'block';
+    errEl.textContent = msg;
+  }
+
+  function start3D() {
+    if (typeof THREE === 'undefined') {
+      showErr('Three.js non chargé — menu UI seul');
+      intro.classList.add('ready');
+      return;
+    }
+
+    var wrap = document.getElementById('canvas-wrap');
+    var renderer, scene, camera, tank;
+
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      if (renderer.outputEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
+      wrap.appendChild(renderer.domElement);
+    } catch (e) {
+      showErr('WebGL indisponible');
+      intro.classList.add('ready');
+      return;
+    }
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1510);
+    scene.fog = new THREE.FogExp2(0x1a1510, 0.014);
+
+    camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(4.5, 2.2, 7.8);
+
+    scene.add(new THREE.HemisphereLight(0xffe6c8, 0x2a2218, 0.6));
+    var sun = new THREE.DirectionalLight(0xffc988, 1.2);
+    sun.position.set(6, 10, 4);
+    scene.add(sun);
+    var fill = new THREE.DirectionalLight(0x88aacc, 0.3);
+    fill.position.set(-4, 3, -2);
+    scene.add(fill);
+
+    var ground = new THREE.Mesh(
+      new THREE.PlaneBufferGeometry(80, 80),
+      new THREE.MeshStandardMaterial({ color: 0x8a7355, roughness: 0.92, metalness: 0.05 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    var matHull = new THREE.MeshStandardMaterial({ color: 0x3d4a38, roughness: 0.7, metalness: 0.25 });
+    var matDark = new THREE.MeshStandardMaterial({ color: 0x2a3228, roughness: 0.75, metalness: 0.3 });
+    tank = new THREE.Group();
+
+    var hull = new THREE.Mesh(new THREE.BoxBufferGeometry(2.4, 0.7, 4.2), matHull);
+    hull.position.y = 0.7;
+    tank.add(hull);
+    var turret = new THREE.Mesh(new THREE.BoxBufferGeometry(1.5, 0.55, 1.8), matHull);
+    turret.position.set(0, 1.3, -0.15);
+    tank.add(turret);
+    var gun = new THREE.Mesh(new THREE.CylinderBufferGeometry(0.09, 0.11, 3.2, 12), matDark);
+    gun.rotation.x = Math.PI / 2;
+    gun.position.set(0, 1.35, 1.9);
+    tank.add(gun);
+    for (var s = -1; s <= 1; s += 2) {
+      var track = new THREE.Mesh(new THREE.BoxBufferGeometry(0.35, 0.55, 4.0), matDark);
+      track.position.set(s * 1.15, 0.35, 0);
+      tank.add(track);
+    }
+    tank.position.set(-1.8, 0, 0.2);
+    tank.rotation.y = Math.PI * 0.28;
+    scene.add(tank);
+
+    var rockMat = new THREE.MeshStandardMaterial({ color: 0x6b5a45, roughness: 0.9 });
+    function rock(x, z, sc) {
+      var m = new THREE.Mesh(new THREE.DodecahedronBufferGeometry(sc, 0), rockMat);
+      m.position.set(x, sc * 0.35, z);
+      m.rotation.set(Math.random(), Math.random(), Math.random());
+      scene.add(m);
+    }
+    rock(-6, -4, 0.8);
+    rock(8, 3, 1.1);
+    rock(-3, 6, 0.5);
+
+    var pivot = new THREE.Vector3(-0.5, 1.05, 0);
+    var baseAngle = 0.18;
+    var radius = 8.4;
+    var height = 2.2;
+
+    window.addEventListener('resize', function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    intro.classList.add('ready');
+
+    function frame(now) {
+      requestAnimationFrame(frame);
+      var t = now * 0.001;
+      var a = baseAngle + Math.sin(t * 0.12) * 0.045;
+      camera.position.x = pivot.x + Math.sin(a) * radius;
+      camera.position.z = pivot.z + Math.cos(a) * radius;
+      camera.position.y = height + Math.sin(t * 0.08) * 0.08;
+      camera.lookAt(pivot);
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  if (document.readyState === 'complete') {
+    setTimeout(start3D, 50);
+  } else {
+    window.addEventListener('load', function () { setTimeout(start3D, 50); });
+  }
+})();
+  </script>
+</body>
+</html>
