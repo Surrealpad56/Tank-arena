@@ -56,7 +56,7 @@ const HUD = (function () {
   H.init = function () {
     ["hud", "score", "sc-a", "sc-b", "sc-mode", "sc-obj", "compass", "minimap", "mini-theme", "fps", "feed", "aim", "gun-mark", "range", "penetration", "target-info", "scope", "sc-dist", "sc-el", "sc-ammo", "sc-zoom", "markers",
       "veh-name", "veh-cat", "orient", "spd", "gear", "eng-fill", "m-engine", "m-canon", "m-trackL", "m-trackR", "crew", "an1", "an2", "ap1", "ap2", "slot1", "slot2", "reload", "reload-fill",
-      "dmg", "dmg-cv", "dmg-chips", "dmg-sum", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
+      "veh", "dmg", "dmg-cv", "dmg-chips", "dmg-sum", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
     { const d = Object.getOwnPropertyDescriptor(Node.prototype, "textContent");
       for (const k in el) { const e = el[k]; if (e && e.nodeType === 1) Object.defineProperty(e, "textContent", { configurable: true, get() { return d.get.call(this); }, set(v) { v = String(v); if (d.get.call(this) !== v) d.set.call(this, v); } }); } }
     el.dcv = el["dmg-cv"].getContext("2d"); el.rcv = el["rep-cv"].getContext("2d");
@@ -320,9 +320,25 @@ const HUD = (function () {
     return { kind: "uncertain", label: "INC" };
   }
 
+  /* Zones opaques du HUD : on évite que les étiquettes de chars se posent dessus.
+     Les rectangles sont mis en cache (coût de getBoundingClientRect non négligeable par image). */
+  const BLOCKERS = ["score", "veh", "dmg", "rep", "feed"];
+  let blockRects = [], blockT = 0;
+  function refreshBlockers() {
+    blockRects = BLOCKERS.map(id => el[id]).filter(Boolean).map(e => {
+      const r = e.getBoundingClientRect();
+      return { l: r.left - 4, t: r.top - 4, r: r.right + 4, b: r.bottom + 4 };
+    }).filter(r => r.r > r.l && r.b > r.t);
+  }
+  function blocked(x, y) {
+    for (const r of blockRects) if (x >= r.l && x <= r.r && y >= r.t && y <= r.b) return true;
+    return false;
+  }
+
   /* ───── Mise à jour par image ───── */
   H.update = function (dt, cam, rules) {
     const t = localTank; if (!t) return;
+    blockT -= dt; if (blockT <= 0) { blockT = 0.25; refreshBlockers(); }
     // FPS
     H.fpsAcc += dt; H.fpsN++;
     if (H.fpsAcc > 0.5) { if (Settings.get("showFps")) el.fps.textContent = Math.round(H.fpsN / H.fpsAcc) + " IPS"; H.fpsAcc = 0; H.fpsN = 0; }
@@ -363,7 +379,7 @@ const HUD = (function () {
     // Viseur : point visé + marqueur de canon
     const aim = Cam.aim;
     const penState = getPenetrationState();
-    el.range.textContent = Math.round(aim.dist) + " m";
+    el.range.textContent = "Visée · " + Math.round(aim.dist) + " m";
     el.aim.classList.remove("possible", "uncertain", "blocked");
     if (penState) {
       el.aim.classList.add(penState.kind);
@@ -389,7 +405,7 @@ const HUD = (function () {
         px = cx + dx * k; py = cy + dy * k; edge = true;
       }
       gm.style.display = "block"; gm.style.left = px + "px"; gm.style.top = py + "px";
-      gm.lastChild.textContent = Math.round(imp.dist) + " m";
+      gm.lastChild.textContent = "Impact · " + Math.round(imp.dist) + " m";
       const dd = Math.hypot(px - cx, py - cy); gm.classList.toggle("far", dd > 160 && !edge); gm.classList.toggle("edge", edge); gm.classList.toggle("rside", px > W * 0.6); gm.classList.toggle("onfoe", !!(imp.target && imp.target.teamId !== t.teamId));
     } else gm.style.display = "none";
     if (Cam.sniper) {
@@ -429,6 +445,8 @@ const HUD = (function () {
       if (!ally && lv < 1) return;
       const d = Math.hypot(tk.x - t.x, tk.y - t.y) * PX;
       const p = Cam.project(tk.x * PX, tk.profile.totalHeight + 1.4 + (tk.gz || 0) * PX, tk.y * PX, cam, H._q || (H._q = {})); if (!p) return;
+      /* Masqué par un panneau ou hors écran : on ne consomme pas de marqueur du pool. */
+      if (blocked(p.x, p.y) || p.x < -40 || p.x > innerWidth + 40 || p.y < -40 || p.y > innerHeight + 40) return;
       const e = marker(mi++);
       e.style.display = "block"; e.style.left = p.x + "px"; e.style.top = p.y + "px";
       if (ally) {

@@ -24,7 +24,8 @@ Toutes les valeurs affichées proviennent des données du jeu (`js/shared-data.j
 - Modes : Champ d'essai, Entraînement, Escarmouche, Deathmatch, Campagne (10 missions par véhicule)
   et Multijoueur. Hors ligne contre des bots ou en salons WebSocket.
 - Contrôles : ZQSD/WASD, Q/E rapport, Espace frein, souris + clic = tir, clic droit/V lunette,
-  1/2 obus, R réparer, T repérage, M carte, Échap pause (désactivée en partie multijoueur).
+  1/2 obus, R réparer, T repérage, M carte, N replier les panneaux Véhicule/Modules,
+  Échap pause (désactivée en partie multijoueur).
 - Modèles 3D : voir `models/README.md`.
 
 Limites : le sol est généré par un moteur de relief déterministe ; les arbres sont décoratifs.
@@ -81,7 +82,9 @@ ne le laissez pas actif sans surveillance. Voir `docs/HEBERGER_GRATUITEMENT.md`.
 
 Le cercle ambre montre le point d'impact réellement calculé (traînée, gravité, vent, vitesse du char)
 et l'anneau de pénétration utilise les mêmes fonctions de combat que le tir (`decideImpact`), à ~8 Hz.
-Lunette sniper : réticule gradué en milliradians, bandeau Distance · Élévation · Munition · Zoom.
+Lunette sniper : réticule gradué en milliradians, bandeau Visée · Élévation · Munition · Zoom.
+Les étiquettes du HUD indiquent explicitement `Visée` (ligne de visée) et `Impact` (point calculé),
+et ne se superposent plus aux panneaux opaques.
 
 ## Comptes et sauvegardes (`js/account.js`)
 
@@ -102,10 +105,20 @@ forgé depuis l'extérieur. Les sauvegardes importées sont validées avant rend
 
 ## Graphismes et météo
 
-Post-traitement selon la qualité (bloom, occlusion ambiante, FXAA, résolution dynamique), éclairage
-avec reflets du ciel, météo (clair, nuageux, pluie, orage, neige, brouillard, tempête de sable) et
-heure (aube, jour, crépuscule, nuit), traces de chenilles, cratères, débris, usure des chars réglable
-dans l'Atelier. Mode sans échec : Réglages → Graphismes ou `?safe=1`.
+- **Pipeline couleur** : rendu linéaire puis conversion sRGB en fin de chaîne, tone mapping ACES
+  (désactivable), roll-off des hautes lumières, exposition et grading par météo/heure. Aucune double
+  conversion sRGB, y compris quand le FXAA est actif.
+- **Éclairage** : reflets du ciel (PMREM), ombres portées plus larges et stabilisées sur la grille de
+  texels, brouillard repoussé, plancher d'ambiant la nuit d'orage (le char reste lisible sous la pluie).
+- **Sol et effets** : détail en 3 échelles non commensurables, masque d'eau séparé avec Fresnel et
+  écume, herbe en 4 variantes regroupées en plaques, explosions en particules texturées, cratères au
+  sol, fumée et flashs atténués.
+- **Réglages** : qualité, ombres/AA/AO (Auto/On/Off), tone mapping, échelle de rendu, distance de vue,
+  effets cinématiques, résolution dynamique, météo animée, mode sans échec.
+- Météo : clair, nuageux, pluie, orage, neige, brouillard, tempête de sable. Heure : aube, jour,
+  crépuscule, nuit. Traces de chenilles, débris et usure des chars réglables dans l'Atelier.
+- Mode sans échec : Réglages → Graphismes, `?safe=1` pour l'activer ou `?safe=0` pour le retirer vraiment
+  (l'ancien réglage restait piégé dans le stockage local).
 
 ## Licence
 

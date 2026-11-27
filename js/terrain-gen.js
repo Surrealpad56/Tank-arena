@@ -218,6 +218,24 @@ const TerrainGen = (function () {
         for (const o of ops) { try { DRAW[o.k](cx, o, L, P, base); } catch (e) { console.warn("[terrain] op", o.k, e); } }
         paintObstacles(cx, L, P);
         cx.restore();
+        /* Masque d'eau réel (rivières, lacs, marais) : remplace la détection par couleur,
+           qui échoue sur les eaux vertes du thème marais. Même orientation que la couleur. */
+        const WN = 512;
+        const wm = document.createElement("canvas"); wm.width = wm.height = WN;
+        const wx2 = wm.getContext("2d"), wi = wx2.createImageData(WN, WN);
+        for (let j = 0; j < WN; j++) {
+          const py = (j + 0.5) / WN * TERRAIN_H;
+          const gj = Math.min(L.CH - 1, (py / L.CS) | 0);
+          for (let i = 0; i < WN; i++) {
+            const px = (i + 0.5) / WN * TERRAIN_W;
+            const gi = Math.min(L.CW - 1, (px / L.CS) | 0);
+            const v = L.inBridge(px, py, 0) ? 0 : L.wet[gj * L.CW + gi];
+            const o = (j * WN + i) * 4;
+            wi.data[o] = wi.data[o + 1] = wi.data[o + 2] = v ? 255 : 0; wi.data[o + 3] = 255;
+          }
+        }
+        wx2.putImageData(wi, 0, 0);
+        cv._waterMask = wm;
         resolve(cv);
       }
       function step() {

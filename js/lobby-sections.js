@@ -245,7 +245,7 @@ const SecHQ = {
       </div>
     </div>`;
 
-    Preview.attach($("#hq-view")); Preview.show(tank).then(() => { const s = $("#hq-model"); if (s) { s.textContent = Preview.model ? "Modèle 3D fourni" : "Assemblage procédural"; s.className = "status tag " + (Preview.model ? "ok" : ""); } });
+    Preview.attach($("#hq-view")); Preview.show(tank).then(() => { const s = $("#hq-model"); if (s) { s.textContent = Preview.model ? "Modèle 3D fourni" : "Modèle générique du jeu"; s.className = "status tag " + (Preview.model ? "ok" : ""); s.style.textTransform = "none"; } });
     on(el, {
       launch: () => launch(),
       goPlay: () => Nav.go("play"),
@@ -394,7 +394,7 @@ const SecHangar = {
         <div class="card"><h3>Munitions <span class="muted" style="font-size:13px;letter-spacing:.06em;text-transform:none">Touches 1 et 2 en combat</span></h3><div class="body"><div class="ammo-row">${ammoKeys.map(k => { const d = I.m.ammo[k], sel1 = isCur && k === a1, sel2 = isCur && k === a2; const info = ammoData[k] || {}; return `<div class="am ${sel1 ? "s1" : sel2 ? "s2" : ""}" title="${escHTML(info.desc || "")}"><b style="color:${info.color || "#fff"}">${k}</b>${sel1 ? `<span class="sl tag" style="color:var(--ally);border-color:var(--ally)">Obus 1</span>` : sel2 ? `<span class="sl tag amber">Obus 2</span>` : ""}<small>Pénétration ${d.penetration} mm · dégâts ${d.damage}</small><small>${d.muzzleVelocity} m/s · ${d.caliber} mm</small><div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm" data-a="ammo" data-s="1" data-k="${k}" ${isCur ? "" : "disabled"}>1</button><button class="btn sm" data-a="ammo" data-s="2" data-k="${k}" ${isCur ? "" : "disabled"}>2</button></div></div>`; }).join("")}</div>
         ${isCur ? "" : `<div class="note" style="margin-top:10px">Choisissez ce véhicule pour configurer ses munitions.</div>`}</div></div></div>
       <div class="card hg-spec cut"><h3>Fiche technique</h3><div class="body">${specBlock(I)}${armorSVG(I)}<div class="note" style="margin-top:10px">Valeurs réellement utilisées par le moteur de combat.</div><div style="margin-top:12px"><button class="btn" data-a="atelier">Modifier l'apparence (Atelier)</button></div></div></div></div>`;
-    Preview.attach($("#hg-view")); Preview.show(hg.sel).then(() => { const s = $("#hg-model"); if (s) { s.textContent = Preview.model ? "Modèle 3D fourni" : "Assemblage procédural"; s.className = "status tag " + (Preview.model ? "ok" : ""); } });
+    Preview.attach($("#hg-view")); Preview.show(hg.sel).then(() => { const s = $("#hg-model"); if (s) { s.textContent = Preview.model ? "Modèle 3D fourni" : "Modèle générique du jeu"; s.className = "status tag " + (Preview.model ? "ok" : ""); s.style.textTransform = "none"; } });
     const re = () => SecHangar.render(el);
     on(el, {
       cat: d => { hg.cat = d.v; re(); }, nat: d => { hg.nat = d.v; re(); }, pick: d => { hg.sel = d.n; re(); }, goResearch: () => Nav.go("research"), atelier: () => { location.href = "editor.html?tank=" + encodeURIComponent(hg.sel); },
@@ -612,10 +612,17 @@ const SecSettings = {
   render(el) {
     const S = Settings.all(), sl = (k, mn, mx, st, fmtv) => `<input type="range" min="${mn}" max="${mx}" step="${st}" value="${S[k]}" data-a="slide" data-k="${k}"><span class="val num" id="v-${k}">${fmtv(S[k])}</span>`;
     const tg = (k) => `<button class="toggle ${S[k] ? "on" : ""}" data-a="tog" data-k="${k}"></button>`;
+    const tri = (k, label, note) => `<div class="field"><div><b>${label}</b><small>${note}</small></div><div class="seg">${[[0, "Auto"], [1, "On"], [-1, "Off"]].map(([v, t]) => `<button data-a="tri" data-k="${k}" data-v="${v}" class="${S[k] === v ? "on" : ""}">${t}</button>`).join("")}</div></div>`;
     const man = window.TANK_MODEL_MANIFEST || {}, keys = Object.keys(TECH_TREE);
     el.innerHTML = `<div class="set-grid"><div>
       <div class="card"><h3>Graphismes</h3><div class="body"><div style="font-size:14px;margin-bottom:2px"><b>Qualité du combat 3D</b><div class="muted" style="font-size:13px">Ombres, densité des forêts, résolution du sol, particules</div></div>
         <div class="qual">${["low", "medium", "high", "ultra"].map(q => `<button class="${S.quality === q ? "on" : ""}" data-a="quality" data-q="${q}"><b>${{ low: "Basse", medium: "Moyenne", high: "Haute", ultra: "Ultra" }[q]}</b><small>${QDESC[q]}</small></button>`).join("")}</div>
+        ${tri("shadows", "Ombres", "Forcer ou couper les ombres portées (au prochain combat)")}
+        ${tri("antialias", "Anticrénelage", "AA matériel, ou FXAA quand les effets cinématiques sont actifs")}
+        ${tri("ao", "Occlusion ambiante", "SSAO — nécessite les effets cinématiques et WebGL2")}
+        <div class="field"><div><b>Tone mapping ACES</b><small>Étalonnage des hautes lumières et des noirs</small></div>${tg("toneMap")}</div>
+        <div class="field"><div><b>Échelle de rendu</b><small>0 = préréglage · augmente sur écran haute densité</small></div><div style="display:flex;align-items:center;gap:10px">${sl("renderScale", 0, 2, 0.05, v => v ? (+v).toFixed(2) + "×" : "Auto")}</div></div>
+        <div class="field"><div><b>Distance de vue</b><small>Brouillard et arbres ; n'affecte pas le repérage</small></div><div style="display:flex;align-items:center;gap:10px">${sl("viewDistance", 0, 2000, 50, v => v ? v + " m" : "Auto")}</div></div>
         <div class="field"><div><b>Champ de vision</b><small>Caméra de poursuite</small></div><div style="display:flex;align-items:center;gap:10px">${sl("fov", 55, 95, 1, v => v + "°")}</div></div>
         <div class="field"><div><b>Distance de caméra</b><small>Valeur par défaut (molette en combat)</small></div><div style="display:flex;align-items:center;gap:10px">${sl("camDist", 8, 22, 1, v => v + " m")}</div></div>
         <div class="field"><div><b>Compteur d'images par seconde</b></div>${tg("showFps")}</div>
@@ -637,7 +644,7 @@ const SecSettings = {
           <li><b>Jouer → Multijoueur → Déployer</b> : le premier crée la partie, les autres la rejoignent.</li>
         </ol><div id="mh-box"></div></div></div>
       <div class="card" style="margin-top:18px"><h3>Modèles 3D <span class="num muted">${keys.filter(k => man[k]).length} / ${keys.length} fournis</span></h3><div class="body">
-        <div class="note" style="margin-bottom:10px">Déposez vos fichiers <b>.glb / .gltf / .obj</b> dans <b>models/</b> puis déclarez-les dans <b>models/models.js</b>. Un char sans modèle utilise l'assemblage procédural de sa catégorie. Un serveur HTTP local est nécessaire pour charger les fichiers.</div>
+        <div class="note" style="margin-bottom:10px">Déposez vos fichiers <b>.glb / .gltf / .obj</b> dans <b>models/</b> puis déclarez-les dans <b>models/models.js</b>. Un char sans modèle utilise le modèle générique intégré au jeu pour sa catégorie. Un serveur HTTP local est nécessaire pour charger les fichiers.</div>
         <table class="mtable">${keys.map(k => `<tr><td>${escHTML(k)}</td><td><span class="tag ${man[k] ? "ok" : ""}">${man[k] ? "Modèle déclaré" : "Procédural · " + getTankProfile(k).catLabel}</span></td></tr>`).join("")}</table></div></div>
       <div class="card" style="margin-top:18px"><h3>Données</h3><div class="body">
         <div class="field"><div><b>Réinitialiser la recherche</b><small>Efface les véhicules acquis, l'XP disponible et la campagne</small></div><button class="btn sm danger" data-a="rsRes">Réinitialiser</button></div>
@@ -648,14 +655,15 @@ const SecSettings = {
       </div></div>`;
     const re = () => SecSettings.render(el);
     MultiHost.bind(el);
-    el.querySelectorAll("input[type=range]").forEach(r => r.oninput = () => { const k = r.dataset.k; Settings.set(k, +r.value); const o = $("#v-" + k); o.textContent = { fov: v => v + "°", camDist: v => v + " m", sens: v => (+v).toFixed(1) + "×", volume: v => Math.round(v * 100) + " %" }[k](+r.value); });
+    el.querySelectorAll("input[type=range]").forEach(r => r.oninput = () => { const k = r.dataset.k; Settings.set(k, +r.value); const o = $("#v-" + k); o.textContent = { fov: v => v + "°", camDist: v => v + " m", sens: v => (+v).toFixed(1) + "×", volume: v => Math.round(v * 100) + " %", renderScale: v => v ? (+v).toFixed(2) + "×" : "Auto", viewDistance: v => v ? v + " m" : "Auto" }[k](+r.value); });
     on(el, {
       mhStart: async () => { await MultiHost.call("POST"); MultiHost.bind(el); }, mhStop: async () => { await MultiHost.call("DELETE"); MultiHost.bind(el); }, mhCopy: () => MultiHost.copy(),
       mhKey: () => { const i = el.querySelector("#mh-key"); MultiHost.key = (i && i.value || "").trim(); MultiHost.call("GET").then(() => MultiHost.bind(el)); },
       safe: () => { Settings.setSafe(!Settings.safe()); location.reload(); }, quality: d => { Settings.set("quality", d.q); re(); }, tog: d => { Settings.set(d.k, !Settings.get(d.k)); re(); },
+      tri: d => { Settings.set(d.k, +d.v); re(); },
       rsRes: () => confirmBox("Réinitialiser la recherche ?", "Les véhicules recherchés, l'XP disponible et la progression de campagne seront effacés. Les statistiques sont conservées.", "Réinitialiser", () => { Store.resetResearch(); refreshAll(); re(); }, true),
       rsAll: () => confirmBox("Effacer tout le profil ?", "Recherche, statistiques, historique et jalons seront définitivement supprimés.", "Tout effacer", () => { Store.resetAll(); refreshAll(); re(); }, true),
-      rsSet: () => { Settings.reset(); re(); toast("Réglages rétablis"); }, devxp: () => { Store.addXP(1000); refreshAll(); toast("+1 000 XP"); }
+      rsSet: () => { Settings.reset(); re(); toast("Réglages rétablis, mode sans échec désactivé"); setTimeout(() => location.reload(), 600); }, devxp: () => { Store.addXP(1000); refreshAll(); toast("+1 000 XP"); }
     });
   }
 };

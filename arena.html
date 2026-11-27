@@ -45,7 +45,7 @@
     <!-- Viseur -->
     <div id="reticle">
       <div id="aim" class="neutral"><i></i><i></i><i></i><i></i></div>
-      <div id="range" class="num disp"></div>
+      <div id="range" class="num disp" title="Distance du point désigné par la caméra (ligne de vue)"></div>
       <div id="penetration" class="penetration hidden"></div>
       <div id="target-info"></div>
     </div>
@@ -53,7 +53,7 @@
       <div id="scope-lens"></div>
       <svg id="scope-ret" xmlns="http://www.w3.org/2000/svg"></svg>
       <div id="scope-info">
-        <div><span>Distance</span><b id="sc-dist">—</b></div>
+        <div><span>Visée</span><b id="sc-dist">—</b></div>
         <div><span>Élévation</span><b id="sc-el">0.0°</b></div>
         <div><span>Munition</span><b id="sc-ammo">—</b></div>
         <div><span>Zoom</span><b id="sc-zoom">×1</b></div>
@@ -69,6 +69,7 @@
       <div id="veh-head">
         <span id="veh-name" class="disp">—</span>
         <span id="veh-cat" class="disp">—</span>
+        <button id="b-panel-veh" class="hud-fold" title="Réduire / afficher les panneaux (N)" aria-label="Réduire les panneaux">–</button>
       </div>
       <div id="veh-body">
         <canvas id="orient" width="120" height="120"></canvas>
@@ -89,7 +90,7 @@
 
     <!-- État des modules (vue de dessus) -->
     <div id="dmg" class="cut">
-      <div class="dh disp"><span>Modules</span><span id="dmg-sum" class="num"></span></div>
+      <div class="dh disp"><span>Modules</span><span id="dmg-sum" class="num"></span><button id="b-panel-dmg" class="hud-fold" title="Réduire / afficher les panneaux (N)" aria-label="Réduire les panneaux">–</button></div>
       <div class="db"><canvas id="dmg-cv" width="150" height="150"></canvas><div id="dmg-chips"></div></div>
     </div>
 

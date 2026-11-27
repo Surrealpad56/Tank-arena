@@ -59,6 +59,7 @@ const Preview = (function () {
     if (tok !== loadTok) return;
     if (view) { pivot.remove(view.root); view.dispose(); view = null; }
     view = TankModels.create(key); view.setTeam(null); view.setShadow(true);
+    if (view.flag) view.flag.visible = false;    // pas de fanion blanc flottant dans les aperçus
     view.turretPivot.rotation.y = 0.1; view.gunPivot.rotation.z = 0.04;
     pivot.add(view.root);
     distT = dist = view.profile.L * 1.5 + 5.5;
@@ -88,7 +89,7 @@ const Preview = (function () {
   async function makeThumb(key) {
     if (!tr) thumbInit();
     await TankModels.loadModelFor(key);
-    const v = TankModels.create(key); v.setTeam(null); ts.add(v.root);
+    const v = TankModels.create(key); v.setTeam(null); if (v.flag) v.flag.visible = false; ts.add(v.root);
     v.turretPivot.rotation.y = 0.15; v.gunPivot.rotation.z = 0.03;
     const p = v.profile, r = Math.max(p.L, p.W * 1.6, p.totalHeight * 1.8) * 0.78, d = r / Math.sin(15 * Math.PI / 180);
     const th = 0.78, ph = 0.34;
