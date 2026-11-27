@@ -41,13 +41,13 @@ const Cam = (function () {
   function solidAt(Px, Py, Pz, exclude) {
     if (Pz <= groundH(Px, Py)) return { kind: "ground" };
     if (obstacleHit3(Px, Py, Pz)) return { kind: "obstacle" };
-    for (const it of items) if (it instanceof Tank && it !== exclude && !it.destroyed) { if (it.hitTest(Px, Py, Pz, 0.1)) return { kind: "tank", target: it }; }
+    for (const it of items) if (it instanceof Tank && it !== exclude && !it.destroyed) { const h = it.hitTest(Px, Py, Pz, 0.1); if (h) return { kind: "tank", target: it, hit: h }; }
     return null;
   }
 
   /* Point d'impact prévu : on rejoue la trajectoire réelle de l'obus (traînée, gravité, vent, vitesse du char)
      depuis l'orientation ACTUELLE du canon — pas depuis la caméra. */
-  C.impact = { x: 0, y: 0, z: 0, kind: "none", target: null, dist: 0, valid: false };
+  C.impact = { x: 0, y: 0, z: 0, kind: "none", target: null, dist: 0, valid: false, info: null, res: null };
   C.predictImpact = function () {
     const t = localTank, I = C.impact;
     if (!t || t.destroyed) { I.valid = false; return I; }
@@ -71,6 +71,19 @@ const Cam = (function () {
     }
     I.x = x; I.y = y; I.z = z; I.kind = hit ? hit.kind : "none"; I.target = hit && hit.target || null; I.valid = true;
     I.dist = Math.hypot(x - m.x, y - m.y, z - m.z) * PX;
+    I.info = null; I.res = null;
+    if (I.target) {
+      // On réutilise exactement les fonctions de combat pour l'indicateur : plus de « PEN » fabriqué.
+      const k = (data.drag || 0.3) * 0.0008, v0 = data.muzzleVelocity || 800, v = v0 * Math.exp(-k * I.dist);
+      const shell = {
+        type: t.currentAmmo, caliber: data.caliber || 75, damage: data.damage || 130,
+        explosionPower: data.explosion || 1.2, penetration0: data.penetration || 75,
+        currentPenetration: Math.round((data.penetration || 75) * Math.pow(v / v0, 1.4285)),
+        vx: vv.vx, vy: vv.vy, vz: vv.vz
+      };
+      const realHit = hit && hit.hit;
+      if (realHit) { try { I.info = resolveShellImpact(I.target, shell, realHit, { x, y, z }); I.res = decideImpact(shell, I.info); } catch (e) { I.info = null; I.res = null; } }
+    }
     return I;
   };
 

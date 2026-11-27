@@ -9,7 +9,7 @@
 (function () {
   "use strict";
   const TD = window.TankDesigns, $ = s => document.querySelector(s);
-  const esc = s => String(s).replace(/[<>&"]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmt = v => (v === undefined || v === null || isNaN(v)) ? "" : Math.round(v * 1000) / 1000;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const S = { design: null, sel: null, tool: "move", axis: null, snap: 0.05, hist: [], hi: -1, tab: "parts", dirty: false, grid: true, ref: true, wire: false, sym: true, addGrp: "hull", roll: false };
@@ -278,7 +278,7 @@
     if (p.type === "cyl") { if (P.seg === undefined) P.seg = 16; if (P.rt === undefined) P.rt = 1; }
     if (p.type === "prism") { if (P.topW === undefined) P.topW = 1; if (P.frontW === undefined) P.frontW = 1; }
     if (p.type === "gun") { if (P.taper === undefined) P.taper = 0.85; if (!P.brake) P.brake = "none"; }
-    let h = `<h4>${TD.TYPES[p.type] || p.type}</h4><label class="f"><span>Nom</span><input type="text" data-path="name" value="${esc(p.name)}"></label>${fsel("Groupe", "grp", Object.entries(TD.GROUPS))}`;
+    let h = `<h4>${esc(TD.TYPES[p.type] || p.type)}</h4><label class="f"><span>Nom</span><input type="text" data-path="name" value="${esc(p.name)}"></label>${fsel("Groupe", "grp", Object.entries(TD.GROUPS))}`;
     h += `<h4>Transformation</h4>${f3("Position", "p", 0.01)}${f3("Rotation °", "r", 1)}`;
     if (["box", "cyl", "sphere", "wedge", "prism"].includes(p.type)) h += f3("Taille", "s", 0.01);
     h += `<h4>Forme</h4>`;
@@ -400,7 +400,12 @@
   function importJSON(file) {
     const r = new FileReader(); r.onload = () => {
       try {
-        const d = JSON.parse(r.result); if (!d || !Array.isArray(d.parts)) throw new Error("format");
+        const raw = JSON.parse(r.result); if (!raw || !Array.isArray(raw.parts)) throw new Error("format");
+        // Même validation que pour une sauvegarde distante : un fichier forgé ne doit jamais
+        // pouvoir injecter du HTML dans l'éditeur ni créer un type de pièce arbitraire.
+        const wrapped = Account.sanitizeValue("customTankDesigns", JSON.stringify({ imported: raw }));
+        const d = (JSON.parse(wrapped).imported || {});
+        if (!Array.isArray(d.parts)) throw new Error("format");
         d.id = null; d.paint = d.paint || { c1: "#5b6b3a", c2: "#3d4a27", c3: "#7e8a52", camo: "none", seed: 1 }; d.tp = d.tp || [0, 1.9]; d.gp = d.gp || [1, 0.5];
         S.design = d; S.sel = null; S.hist = []; S.hi = -1; snap(); S.dirty = true; needRebuild = true; renderAll(); setTimeout(frame, 30); toast("Char importé");
       } catch (e) { toast("Fichier invalide"); }

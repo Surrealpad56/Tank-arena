@@ -84,11 +84,12 @@ const HUD = (function () {
   H.hideWait = function () { el.wait.classList.add("hidden"); };
   H.toast = function (text, ms) { el.toast.textContent = text; el.toast.classList.remove("hidden"); H.toastT = ms || 2200; };
   H.showEnd = function (d) {
-    const rows = d.stats.map(s => `<div><span>${s[0]}</span><b class="num">${s[1]}</b></div>`).join("");
-    el.end.innerHTML = `<div class="end-card cut ${d.win ? "win" : "loss"}"><h2>${d.title}</h2><div class="end-sub">${d.sub}</div>
+    const e = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const rows = (d.stats || []).map(s => `<div><span>${e(s[0])}</span><b class="num">${e(s[1])}</b></div>`).join("");
+    el.end.innerHTML = `<div class="end-card cut ${d.win ? "win" : "loss"}"><h2>${e(d.title)}</h2><div class="end-sub">${e(d.sub)}</div>
       <div class="end-grid">${rows}</div>
-      <div class="end-xp"><div><span class="disp" style="font-size:13px;letter-spacing:.14em;color:var(--dim)">Expérience gagnée</span><small>${d.xpNote || ""}</small></div><b class="num">+${d.xp.toLocaleString("fr-FR")} XP</b></div>
-      <div class="pa-btns"><button class="btn primary disp" id="e-again">${d.again || "Rejouer"}</button><button class="btn disp" id="e-lobby">Retour au QG</button></div></div>`;
+      <div class="end-xp"><div><span class="disp" style="font-size:13px;letter-spacing:.14em;color:var(--dim)">Expérience gagnée</span><small>${e(d.xpNote || "")}</small></div><b class="num">+${(Number(d.xp) || 0).toLocaleString("fr-FR")} XP</b></div>
+      <div class="pa-btns"><button class="btn primary disp" id="e-again">${e(d.again || "Rejouer")}</button><button class="btn disp" id="e-lobby">Retour au QG</button></div></div>`;
     el.end.classList.remove("hidden");
     $("e-again").onclick = () => d.onAgain ? d.onAgain() : location.reload(); $("e-lobby").onclick = () => location.href = "lobby.html";
     if (document.pointerLockElement) document.exitPointerLock();
@@ -102,7 +103,7 @@ const HUD = (function () {
     setTimeout(() => d.classList.add("old"), 6500); setTimeout(() => d.remove(), 7200);
   }
   H.feed = feed;
-  const esc = s => String(s).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   H.event = function (type, detail, bearing, outgoing) {
     const d = esc(detail || "");
     switch (type) {
@@ -285,7 +286,19 @@ const HUD = (function () {
   }
 
   function getPenetrationState() {
-    const t = localTank; const target = Cam && Cam.aim ? Cam.aim.target : null;
+    const t = localTank;
+    const pred = (typeof Cam !== "undefined" && Cam.impact) ? Cam.impact : null;
+    // Quand la trajectoire réelle est disponible, on affiche SON résultat, pas une approximation HUD.
+    if (pred && pred.valid && pred.kind && pred.kind !== "none") {
+      if (pred.kind !== "tank") return { kind: "uncertain", label: "—" };
+      if (pred.res) {
+        const o = pred.res.outcome;
+        if (o === "blocked") return { kind: "blocked", label: "BLOQ" };
+        if (o === "ricochet") return { kind: "uncertain", label: "RICO" };
+        return { kind: "possible", label: "PEN" };
+      }
+    }
+    const target = Cam && Cam.aim ? Cam.aim.target : null;
     if (!t || !target || target.destroyed) return null;
     const ammoType = t.currentAmmo || selectedAmmos[0];
     const data = getAmmoData(ammoType, t._tankModules);
@@ -362,8 +375,8 @@ const HUD = (function () {
       el.penetration.classList.add("hidden");
       el.penetration.textContent = "";
     }
-    /* Point d'impact prévu (trajectoire balistique réelle depuis le canon), recalculé une image sur deux */
-    H._impN = (H._impN || 0) + 1; const imp = (H._impN & 1) || !Cam.impact.valid ? Cam.predictImpact() : Cam.impact;
+    /* Point d'impact prévu : arena-main.js le recalcule à ~8 Hz, le HUD ne fait que l'afficher. */
+    const imp = Cam.impact;
     const gm = el["gun-mark"];
     if (imp.valid && !t.destroyed) {
       const pr = Cam.project(imp.x * PX, imp.z * PX, imp.y * PX, cam, H._p || (H._p = {}));

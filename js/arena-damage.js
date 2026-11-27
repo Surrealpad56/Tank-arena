@@ -251,10 +251,10 @@ const Dmg = (function () {
   }
   function kindOf(shell) {
     const t = shell.type;
-    const fuzeArmed = shell.hasFuze === true || shell.fuze === true;
+    const fuze = shell.hasFuze === undefined ? (shell.fuze === true) : (shell.hasFuze === true);
     if (t === "HEAT") return "heat"; if (t === "HE" || t === "shrapnel") return "he";
-    if ((t === "APHE" || t === "APCBC" || t === "APBC") && fuzeArmed) return "aphe";
-    if (t === "APHE" && shell.hasFuze !== false && !fuzeArmed) return "aphe";
+    if (t === "APHE") return fuze ? "aphe" : "solid";
+    if ((t === "APCBC" || t === "APBC") && fuze) return "aphe";
     return "solid";
   }
 
@@ -433,7 +433,14 @@ const Dmg = (function () {
   };
   D.hideXray = function (tank) {
     const x = tank.int && tank.int.xray; if (!x) return;
-    World.S.scene.remove(x.root); x.items.forEach(i => { i.mesh.material.dispose(); i.mesh.children[0].geometry.dispose(); i.mesh.children[0].material.dispose(); }); tank.int.xray = null;
+    World.S.scene.remove(x.root);
+    x.items.forEach(i => {
+      // EdgesGeometry est construite à partir de base : il faut libérer les deux géométries.
+      const edge = i.mesh.children && i.mesh.children[0];
+      if (edge) { edge.geometry.dispose(); edge.material.dispose(); }
+      i.mesh.geometry.dispose(); i.mesh.material.dispose();
+    });
+    tank.int.xray = null;
   };
   D.update = function (dt) {
     for (let i = tr.length - 1; i >= 0; i--) { const t = tr[i]; t.life -= dt; t.ln.material.opacity = clamp(t.life / 1.2, 0, 1); if (t.life <= 0) { World.S.scene.remove(t.ln); t.ln.geometry.dispose(); t.ln.material.dispose(); tr.splice(i, 1); } }

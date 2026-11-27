@@ -1,4 +1,6 @@
-# Déploiement gratuit sur Render (https://render.com) : « New + » → « Blueprint », ou créer un Web Service à la main.
+# Déploiement sur Render.
+# Le disque du plan free est éphémère : renseignez les deux variables Upstash dans le dashboard
+# Render (elles ne sont pas versions ici) pour que les comptes survivent aux redémarrages.
 services:
   - type: web
     name: tank-arena
@@ -6,3 +8,11 @@ services:
     plan: free
     buildCommand: "echo ok"
     startCommand: "npm start"
+    healthCheckPath: /api/health
+    envVars:
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: TA_TUNNEL_KEY
+        sync: false

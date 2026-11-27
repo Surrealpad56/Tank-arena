@@ -10,6 +10,9 @@ const Game = { paused: true, started: false, canvas: null };
 
 function setPaused(p) {
   if (p === Game.paused) return;
+  // En ligne, une pause locale laisserait le char immobile dans une simulation qui continue :
+  // on interdit la pause pendant une partie multijoueur.
+  if (p && typeof Net !== "undefined" && Net.on) return;
   Game.paused = p; HUD.showPause(p);
   if (p) { Input.fire = false; if (document.pointerLockElement) document.exitPointerLock(); }
 }

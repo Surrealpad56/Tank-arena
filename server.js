@@ -1,16 +1,31 @@
 #!/usr/bin/env node
 /* ==========================================================================
-   SERVER.JS — Serveur multijoueur local de TankArena.
+   SERVER.JS — Serveur de jeu de TankArena.
    Aucune dépendance : il suffit de Node.js (≥ 18).   Lancer :  node server.js
    • sert les fichiers du jeu (lobby.html, arena.html…) sur le port 3000,
-   • relaie les parties en WebSocket (une seule salle),
-   • GET /api/room renvoie l'état de la salle (le lobby l'utilise).
-   Les amis ouvrent l'adresse affichée dans la console (même wifi).
+   • relaie les parties en WebSocket (plusieurs salons, voir ROOM_LIMIT),
+   • GET /api/lobby renvoie la liste des salons et des joueurs en ligne.
+   Les amis ouvrent l'adresse affichée dans la console (LAN ou tunnel public).
    ========================================================================== */
 "use strict";
 const http = require("http"), fs = require("fs"), path = require("path"), crypto = require("crypto"), os = require("os"), zlib = require("zlib"), { spawn } = require("child_process");
 const PORT = +process.env.PORT || 3000, ROOT = __dirname;
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".obj": "text/plain", ".txt": "text/plain; charset=utf-8", ".ico": "image/x-icon", ".woff2": "font/woff2" };
+
+/* ───── Durcissement HTTP ─────
+   Les routes de comptes ne sont accessibles que depuis la même origine, sauf si
+   TA_CORS_ORIGIN définit explicitement une origine autorisée (page statique séparée).
+   TA_CORS_ORIGIN n'accepte qu'une origine exacte, jamais "*". */
+const CORS_ORIGIN = process.env.TA_CORS_ORIGIN || "";
+function corsHeaders(res, req) {
+  const o = String(req.headers.origin || "");
+  if (CORS_ORIGIN && o === CORS_ORIGIN) { res.setHeader("Access-Control-Allow-Origin", o); res.setHeader("Vary", "Origin"); }
+}
+function securityHeaders(res) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "no-referrer");
+}
 
 /* ───── Salons multijoueur ─────
    Plusieurs salons en parallèle. Chaque salon a un HÔTE (celui qui l'a créé, transmissible) qui contrôle les
@@ -19,6 +34,7 @@ const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; cha
    Identité : « cid » = identifiant secret du navigateur ; « mid » = identifiant public d'un membre du salon.
    Phases : lobby (préparation) → playing (les clients ouvrent arena.html et envoient « enter »). */
 const ROOM_LIMIT = 24, OFFLINE_GRACE = 90000;
+const GAME_TYPES = new Set(["s", "shot", "dead", "resp", "bots", "chat", "ev"]);   // seuls ces types sont relayés en jeu
 const rooms = new Map(), presence = new Map();
 let roomSeq = 0, pidSeq = 0, midSeq = 0;
 const clean = (s, n) => String(s == null ? "" : s).replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, n);
@@ -50,6 +66,21 @@ function roomSummary(r) {
 }
 const gameCfg = r => ({ theme: r.cfg.theme, botsA: r.cfg.botsA, botsB: r.cfg.botsB, difficulty: r.cfg.difficulty, scoreToWin: r.cfg.scoreToWin, respawnBots: r.cfg.respawnBots, caps: r.cfg.caps });
 function touchPresence(cid, name, c, acct) { const p = presence.get(cid) || { cid }; if (acct) { p.acct = acct.low; p.name = acct.name; } else if (!p.acct) p.name = name; p.seen = Date.now(); if (c) p.c = c; presence.set(cid, p); }
+/* Un cid appartient à la socket qui s'est identifiée en dernier. Tant que cette socket est
+   vivante, aucune autre ne peut reprendre le siège (hello ET enter doivent passer par ici). */
+function cidBusy(cid, c) {
+  const p = presence.get(cid);
+  if (p && p.c && p.c !== c && p.c.sock && !p.c.sock.destroyed) return true;
+  for (const r of rooms.values()) { const m = r.members.get(cid); if (m && m.sock && m.sock !== c.sock && !m.sock.destroyed) return true; }
+  return false;
+}
+function adoptCid(c, cid) {
+  if (!cid || cidBusy(cid, c)) return false;
+  c.cid = cid;
+  const p = presence.get(cid) || { cid };
+  p.c = c; p.seen = Date.now(); presence.set(cid, p);
+  return true;
+}
 function lobbyOnline() {
   const out = [], now = Date.now();
   for (const p of presence.values()) {
@@ -60,8 +91,9 @@ function lobbyOnline() {
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
-function lobbyInfo(cid, name, acct) {
-  if (cid) touchPresence(cid, clean(name, 16) || "Joueur", null, acct);
+function lobbyInfo() {
+  /* La liste est publique et en lecture seule : les paramètres cid/name du GET ne doivent pas
+     pouvoir modifier la présence (usurpation de pseudo). Seuls les messages WebSocket authentifient. */
   const list = [...rooms.values()].sort((a, b) => (a.state === "playing") - (b.state === "playing") || b.created - a.created).map(roomSummary);
   return { rooms: list, online: lobbyOnline(), uptime: Math.round(process.uptime()) };
 }
@@ -87,9 +119,14 @@ function electSimHost(r) {
   let n = null; for (const m of r.members.values()) if (m.inGame && (!n || m.joined < n.joined)) n = m;
   r.simHostCid = n ? n.cid : null; if (n) toRoom(r, { t: "host", id: n.pid }, true);
 }
-function attach(c, r, me, inGame) { me.sock = c.sock; me.left = 0; me.inGame = inGame; c.room = r; c.me = me; c.inGame = inGame; }
+function attach(c, r, me, inGame) {
+  me.sock = c.sock; me.client = c; me.left = 0; me.inGame = inGame; c.room = r; c.me = me; c.inGame = inGame;
+  const p = presence.get(me.cid) || { cid: me.cid };
+  if (!p.acct) p.name = me.name;
+  p.c = c; p.seen = Date.now(); presence.set(me.cid, p);
+}
 function addMember(r, c, m, team) {
-  const me = { cid: c.cid, mid: "m" + (++midSeq), name: c.name, acct: !!c.acct, key: clean(m.key, 60), team, ready: false, sock: c.sock, inGame: false, pid: null, left: 0, joined: Date.now() };
+  const me = { cid: c.cid, mid: "m" + (++midSeq), name: c.name, acct: !!c.acct, key: clean(m.key, 60), team, ready: false, sock: c.sock, client: c, inGame: false, pid: null, left: 0, joined: Date.now() };
   r.members.set(c.cid, me); if (r.state === "playing") { me.pid = "p" + (++pidSeq); r.byPid.set(me.pid, me); }
   c.room = r; c.me = me; c.inGame = false; return me;
 }
@@ -131,51 +168,88 @@ const DB = (function () {
     async del(k) { cache.delete(k); if (useUp) await up(["DEL", k]); else { loadFile(); delete fileData[k]; flush(); } }
   };
 })();
-if (DB.kind === "fichier") console.log("  Comptes : stockage dans " + path.join(DATA_DIR, "db.json") + "  (pour une sauvegarde durable en ligne, voir HEBERGER_GRATUITEMENT.md : Upstash)");
+if (DB.kind === "fichier") console.log("  Comptes : stockage dans " + path.join(DATA_DIR, "db.json") + "  (pour une sauvegarde durable en ligne, voir docs/HEBERGER_GRATUITEMENT.md : Upstash)");
 else console.log("  Comptes : stockage Upstash Redis ✔");
 
 const NAME_RE = /^[A-Za-z0-9_-]{3,16}$/, RESERVED = new Set(["admin", "administrateur", "moderateur", "modo", "serveur", "server", "system", "systeme", "invite", "guest", "root", "anthropic", "claude"]);
 const SAVE_KEYS = /^(XP|XPEarned|SelectedTank|SelectedAmmo1|SelectedAmmo2|researchOrient|match_history|customTankDesigns|customTankActive|researched_.+|claimed_.+|camp_completed_.+|stat_.+)$/;
 const SAVE_MAX = 380000, FRIENDS_MAX = 50, REQ_MAX = 30, SESSION_S = 60 * 86400;
-const sessCache = new Map();                          // jeton → { n: pseudo (minuscules), e: expiration }
+const sessCache = new Map();                          // jeton → { n: pseudo (minuscules), e: expiration, g: génération }
+const userGen = new Map();                            // pseudo → génération de session (invalidée si mot de passe changé)
 const hits = new Map();                               // limiteur : clé → [horodatages]
 function limited(key, max, ms) { const now = Date.now(), a = (hits.get(key) || []).filter(t => now - t < ms); if (a.length >= max) { hits.set(key, a); return true; } a.push(now); hits.set(key, a); return false; }
-setInterval(() => { const now = Date.now(); for (const [k, a] of hits) if (!a.some(t => now - t < 3600000)) hits.delete(k); for (const [k, v] of sessCache) if (v.e < now) sessCache.delete(k); }, 600000).unref();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, a] of hits) if (!a.some(t => now - t < 3600000)) hits.delete(k);
+  for (const [k, v] of sessCache) if (v.e < now) { sessCache.delete(k); DB.del("ta:t:" + k).catch(() => { }); }
+}, 600000).unref();
 let chain = Promise.resolve();
 const serial = fn => { const p = chain.then(fn); chain = p.catch(() => { }); return p; };      // modifications de comptes une par une (pas de course entre deux amis)
 const scrypt = (pw, salt) => new Promise((res, rej) => crypto.scrypt(pw, salt, 32, { N: 16384, r: 8, p: 1 }, (e, k) => e ? rej(e) : res(k)));
-const ipOf = req => String((req.headers["x-forwarded-for"] || "").split(",")[0] || req.socket.remoteAddress || "?").trim();
-const json = (res, code, obj) => { res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" }); res.end(JSON.stringify(obj)); };
+/* X-Forwarded-For n'est pris en compte QUE derrière un proxy local (tunnel). On prend la
+   dernière valeur (ajoutée par le proxy) et non la première (facile à forger par le client). */
+const ipOf = req => {
+  const addr = String(req.socket.remoteAddress || "?").replace(/^::ffff:/, "");
+  const fwd = String(req.headers["x-forwarded-for"] || "").split(",").map(s => s.trim()).filter(Boolean);
+  const loop = addr === "127.0.0.1" || addr === "::1";
+  return loop && fwd.length ? fwd[fwd.length - 1] : addr;
+};
+const json = (res, req, code, obj) => {
+  corsHeaders(res, req); securityHeaders(res);
+  res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(JSON.stringify(obj));
+};
 function readBody(req, max) {
   return new Promise((resolve, reject) => {
-    let n = 0; const chunks = [];
-    req.on("data", c => { n += c.length; if (n > max) { reject(Object.assign(new Error("Corps trop gros"), { code: 413 })); req.destroy(); } else chunks.push(c); });
-    req.on("end", () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {}); } catch (e) { reject(Object.assign(new Error("JSON invalide"), { code: 400 })); } });
-    req.on("error", reject);
+    let n = 0, done = false; const chunks = [];
+    req.on("data", c => {
+      if (done) return; n += c.length;
+      if (n > max) { done = true; req.pause(); reject(Object.assign(new Error("Corps trop gros"), { code: 413 })); }
+      else chunks.push(c);
+    });
+    req.on("end", () => { if (done) return; try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {}); } catch (e) { reject(Object.assign(new Error("JSON invalide"), { code: 400 })); } });
+    req.on("error", e => { if (!done) reject(e); });
   });
 }
 const sessAcct = low => { const v = userCache.get(low); return v ? { low, name: v } : { low, name: low }; };
 const userCache = new Map();
-const getUser = async low => { const v = await DB.get("ta:u:" + low); const u = v ? JSON.parse(v) : null; if (u) userCache.set(low, u.name); return u; };
-const putUser = u => DB.set("ta:u:" + u.name.toLowerCase(), JSON.stringify(u));
-const pubUser = u => ({ name: u.name, created: u.created, last: u.last, friends: u.friends.length });
-async function newSession(low) { const tok = crypto.randomBytes(32).toString("hex"), rec = { n: low, e: Date.now() + SESSION_S * 1000 }; sessCache.set(tok, rec); await DB.set("ta:t:" + tok, JSON.stringify(rec), SESSION_S); return tok; }
+const getUser = async low => {
+  const v = await DB.get("ta:u:" + low); if (!v) return null;
+  let u; try { u = JSON.parse(v); } catch (e) { console.error("[compte] entrée corrompue : " + low); return null; }
+  if (!u || typeof u !== "object") return null;
+  userCache.set(low, u.name); userGen.set(low, u.sg || 0); return u;
+};
+const putUser = u => { userGen.set(u.name.toLowerCase(), u.sg || 0); return DB.set("ta:u:" + u.name.toLowerCase(), JSON.stringify(u)); };
+const pubUser = u => ({ name: u.name, created: u.created, last: u.last, friends: Array.isArray(u.friends) ? u.friends.length : 0 });
+async function newSession(low) {
+  const u = await getUser(low), tok = crypto.randomBytes(32).toString("hex");
+  const rec = { n: low, g: (u && u.sg) || 0, e: Date.now() + SESSION_S * 1000 };
+  sessCache.set(tok, rec); await DB.set("ta:t:" + tok, JSON.stringify(rec), SESSION_S); return tok;
+}
 async function resolveToken(tok) {
   tok = String(tok || ""); if (!/^[a-f0-9]{64}$/.test(tok)) return null;
   let rec = sessCache.get(tok);
   if (!rec) { const v = await DB.get("ta:t:" + tok, true); if (!v) return null; try { rec = JSON.parse(v); } catch (e) { return null; } sessCache.set(tok, rec); }
   if (rec.e < Date.now()) { sessCache.delete(tok); return null; }
+  return rec;
+}
+/* Un jeton n'est valide que si sa génération correspond à celle du compte.
+   Changer de mot de passe incrémente la génération : tous les appareils sont déconnectés. */
+async function tokenUser(tok) {
+  const rec = await resolveToken(tok); if (!rec) return null;
+  const u = await getUser(rec.n); if (!u) return null;
+  if ((rec.g || 0) !== (u.sg || 0)) { sessCache.delete(tok); await DB.del("ta:t:" + tok); return null; }
   return rec.n;
 }
+function revokeSessions(low) { for (const [tok, rec] of sessCache) if (rec.n === low) sessCache.delete(tok); }
 const bearer = req => { const h = String(req.headers.authorization || ""); return h.startsWith("Bearer ") ? h.slice(7).trim() : ""; };
-const authNameSync = req => { const r = sessCache.get(bearer(req)); return r && r.e > Date.now() ? r.n : null; };
 async function isRegistered(low) { try { return !!(await DB.get("ta:u:" + low)); } catch (e) { return false; } }
 
 function friendView(low) {                            // état « en ligne » d'un compte d'après les présences
   for (const p of presence.values()) {
     if (p.acct !== low) continue; const live = p.c && p.c.sock && !p.c.sock.destroyed; if (!live && Date.now() - p.seen > 9000) continue;
     const [r, m] = findMemberRoom(p.cid);
-    return { online: true, where: r ? (m.inGame ? "En partie" : "Dans un salon") : "Au QG", room: r ? { id: r.id, name: r.name, locked: !!r.pass, state: r.state, full: r.members.size >= r.cfg.maxPlayers } : null };
+    return { online: true, where: r ? (m.inGame ? "En partie" : "Dans un salon") : "Au QG", room: r ? { id: r.id, name: r.name, locked: !!r.pass, state: r.state, full: r.members.size >= r.cfg.maxPlayers, late: !!r.cfg.allowLate } : null };
   }
   return { online: false, where: "Hors ligne", room: null };
 }
@@ -190,10 +264,15 @@ async function friendsPayload(u) {
 const ACC_ROUTES = new Set(["/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/password", "/api/auth/delete", "/api/me", "/api/save", "/api/friends", "/api/friends/add", "/api/friends/respond", "/api/friends/remove"]);
 function apiAccounts(req, res, url) {
   if (!ACC_ROUTES.has(url)) return false;
-  if (req.method === "OPTIONS") { res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS", "Access-Control-Max-Age": "600" }); res.end(); return true; }
+  if (req.method === "OPTIONS") {
+    corsHeaders(res, req); securityHeaders(res);
+    const h = { "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS", "Access-Control-Max-Age": "600" };
+    if (res.getHeader("Access-Control-Allow-Origin")) h["Access-Control-Allow-Origin"] = res.getHeader("Access-Control-Allow-Origin"), h["Vary"] = "Origin";
+    res.writeHead(204, h); res.end(); return true;
+  }
   handleAcc(req, res, url).catch(e => {
-    if (e.code === 413) return json(res, 413, { error: "Données trop volumineuses." }); if (e.code === 400) return json(res, 400, { error: "Requête invalide." });
-    console.error("[comptes]", e.message); json(res, e.db ? 503 : 500, { error: e.db ? "Le stockage des comptes est indisponible pour le moment. Réessayez dans un instant." : "Erreur du serveur." });
+    if (e.code === 413) return json(res, req, 413, { error: "Données trop volumineuses." }); if (e.code === 400) return json(res, req, 400, { error: "Requête invalide." });
+    console.error("[comptes]", e.message); json(res, req, e.db ? 503 : 500, { error: e.db ? "Le stockage des comptes est indisponible pour le moment. Réessayez dans un instant." : "Erreur du serveur." });
   });
   return true;
 }
@@ -201,77 +280,100 @@ async function handleAcc(req, res, url) {
   const M = req.method, ip = ipOf(req);
   /* ── inscription / connexion (sans jeton) ── */
   if (url === "/api/auth/register" && M === "POST") {
-    if (limited("reg:" + ip, 8, 3600000)) return json(res, 429, { error: "Trop d'inscriptions depuis cette connexion. Réessayez plus tard." });
+    if (limited("reg:" + ip, 8, 3600000)) return json(res, req, 429, { error: "Trop d'inscriptions depuis cette connexion. Réessayez plus tard." });
     const b = await readBody(req, 2000), name = String(b.name || "").trim(), pass = String(b.pass || "");
-    if (!NAME_RE.test(name)) return json(res, 400, { error: "Pseudo : 3 à 16 caractères (lettres, chiffres, - et _)." });
-    if (RESERVED.has(name.toLowerCase())) return json(res, 400, { error: "Ce pseudo est réservé." });
-    if (pass.length < 6 || pass.length > 100) return json(res, 400, { error: "Mot de passe : 6 caractères minimum." });
+    if (!NAME_RE.test(name)) return json(res, req, 400, { error: "Pseudo : 3 à 16 caractères (lettres, chiffres, - et _)." });
+    if (RESERVED.has(name.toLowerCase())) return json(res, req, 400, { error: "Ce pseudo est réservé." });
+    if (pass.length < 6 || pass.length > 100) return json(res, req, 400, { error: "Mot de passe : 6 caractères minimum." });
     const salt = crypto.randomBytes(16), hash = await scrypt(pass, salt);
     const r = await serial(async () => {
       if (await getUser(name.toLowerCase())) return null;
-      const u = { name, salt: salt.toString("hex"), hash: hash.toString("hex"), created: Date.now(), last: Date.now(), friends: [], inReq: [], outReq: [], save: null };
+      const u = { name, salt: salt.toString("hex"), hash: hash.toString("hex"), sg: 0, created: Date.now(), last: Date.now(), friends: [], inReq: [], outReq: [], save: null };
       await putUser(u); return u;
     });
-    if (!r) return json(res, 409, { error: "Ce pseudo est déjà pris." });
-    console.log("[compte] créé : " + name); return json(res, 200, { token: await newSession(name.toLowerCase()), user: pubUser(r) });
+    if (!r) return json(res, req, 409, { error: "Ce pseudo est déjà pris." });
+    console.log("[compte] créé : " + name); return json(res, req, 200, { token: await newSession(name.toLowerCase()), user: pubUser(r) });
   }
   if (url === "/api/auth/login" && M === "POST") {
     const b = await readBody(req, 2000), name = String(b.name || "").trim().toLowerCase(), pass = String(b.pass || "");
-    if (limited("log:" + ip, 20, 600000) || limited("logn:" + name, 8, 600000)) return json(res, 429, { error: "Trop de tentatives. Réessayez dans quelques minutes." });
+    if (limited("log:" + ip, 10, 600000)) return json(res, req, 429, { error: "Trop de tentatives. Réessayez dans quelques minutes." });
     const u = NAME_RE.test(name) ? await getUser(name) : null; let ok = false;
     if (u) { const h = await scrypt(pass, Buffer.from(u.salt, "hex")), ref = Buffer.from(u.hash, "hex"); ok = h.length === ref.length && crypto.timingSafeEqual(h, ref); } else await scrypt(pass, Buffer.alloc(16));
-    if (!ok) return json(res, 401, { error: "Pseudo ou mot de passe incorrect." });
-    u.last = Date.now(); await putUser(u); return json(res, 200, { token: await newSession(name), user: pubUser(u) });
+    if (!ok) {
+      // pas de verrou global par pseudo (DoS) : on limite par couple pseudo/IP, et seulement les échecs
+      if (limited("logn:" + name + "|" + ip, 8, 600000)) return json(res, req, 429, { error: "Trop de tentatives. Réessayez dans quelques minutes." });
+      return json(res, req, 401, { error: "Pseudo ou mot de passe incorrect." });
+    }
+    const tok = await serial(async () => {
+      const fresh = await getUser(name); if (!fresh) return null;
+      fresh.last = Date.now(); await putUser(fresh);
+      return newSession(name);
+    });
+    if (!tok) return json(res, req, 401, { error: "Compte introuvable.", auth: false });
+    return json(res, req, 200, { token: tok, user: pubUser(u) });
   }
   /* ── tout le reste exige un jeton ── */
-  const tok = bearer(req), low = await resolveToken(tok);
-  if (!low) return json(res, 401, { error: "Session expirée : reconnectez-vous.", auth: false });
-  const me = await getUser(low); if (!me) return json(res, 401, { error: "Compte introuvable.", auth: false });
-  if (url === "/api/auth/logout" && M === "POST") { sessCache.delete(tok); await DB.del("ta:t:" + tok); return json(res, 200, { ok: true }); }
-  if (url === "/api/me" && M === "GET") return json(res, 200, { user: pubUser(me), save: me.save, storage: DB.kind, persistent: DB.kind === "upstash" });
+  const tok = bearer(req), low = await tokenUser(tok);
+  if (!low) return json(res, req, 401, { error: "Session expirée : reconnectez-vous.", auth: false });
+  const me = await getUser(low); if (!me) return json(res, req, 401, { error: "Compte introuvable.", auth: false });
+  if (url === "/api/auth/logout" && M === "POST") { sessCache.delete(tok); await DB.del("ta:t:" + tok); return json(res, req, 200, { ok: true }); }
+  if (url === "/api/me" && M === "GET") return json(res, req, 200, { user: pubUser(me), save: me.save, storage: DB.kind, persistent: DB.kind === "upstash" });
   if (url === "/api/auth/delete" && M === "POST") {                // suppression complète du compte et de ses données
     const b = await readBody(req, 2000), pass = String(b.pass || "");
-    if (limited("del:" + low, 5, 600000)) return json(res, 429, { error: "Trop de tentatives." });
-    const h = await scrypt(pass, Buffer.from(me.salt, "hex")), ref = Buffer.from(me.hash, "hex");
-    if (!(h.length === ref.length && crypto.timingSafeEqual(h, ref))) return json(res, 401, { error: "Mot de passe incorrect." });
-    await serial(async () => {
-      const u = await getUser(low); if (!u) return;
+    if (limited("del:" + low, 5, 600000)) return json(res, req, 429, { error: "Trop de tentatives." });
+    const chk = await serial(async () => {
+      const u = await getUser(low); if (!u) return false;
+      const h = await scrypt(pass, Buffer.from(u.salt, "hex")), ref = Buffer.from(u.hash, "hex");
+      if (h.length !== ref.length || !crypto.timingSafeEqual(h, ref)) return false;
       for (const o of new Set([...u.friends, ...u.inReq, ...u.outReq])) { const f = await getUser(o); if (!f) continue; for (const k of ["friends", "inReq", "outReq"]) { const i = f[k].indexOf(low); if (i >= 0) f[k].splice(i, 1); } await putUser(f); }
       await DB.del("ta:u:" + low); await DB.del("ta:s:" + low); userCache.delete(low);
+      return true;
     });
-    sessCache.delete(tok); await DB.del("ta:t:" + tok); console.log("[compte] supprimé : " + me.name); return json(res, 200, { ok: true });
+    if (!chk) return json(res, req, 401, { error: "Mot de passe incorrect." });
+    revokeSessions(low); userGen.delete(low); await DB.del("ta:t:" + tok); console.log("[compte] supprimé : " + me.name); return json(res, req, 200, { ok: true });
   }
   if (url === "/api/auth/password" && M === "POST") {
     const b = await readBody(req, 2000), old = String(b.old || ""), pass = String(b.pass || "");
-    if (limited("pw:" + low, 6, 600000)) return json(res, 429, { error: "Trop de tentatives." });
-    if (pass.length < 6 || pass.length > 100) return json(res, 400, { error: "Nouveau mot de passe : 6 caractères minimum." });
-    const h = await scrypt(old, Buffer.from(me.salt, "hex")), ref = Buffer.from(me.hash, "hex");
-    if (!(h.length === ref.length && crypto.timingSafeEqual(h, ref))) return json(res, 401, { error: "Mot de passe actuel incorrect." });
-    const salt = crypto.randomBytes(16); me.salt = salt.toString("hex"); me.hash = (await scrypt(pass, salt)).toString("hex"); await serial(() => putUser(me)); return json(res, 200, { ok: true });
+    if (limited("pw:" + low, 6, 600000)) return json(res, req, 429, { error: "Trop de tentatives." });
+    if (pass.length < 6 || pass.length > 100) return json(res, req, 400, { error: "Nouveau mot de passe : 6 caractères minimum." });
+    const out = await serial(async () => {
+      const u = await getUser(low); if (!u) return { code: 401, error: "Compte introuvable." };
+      const h = await scrypt(old, Buffer.from(u.salt, "hex")), ref = Buffer.from(u.hash, "hex");
+      if (h.length !== ref.length || !crypto.timingSafeEqual(h, ref)) return { code: 401, error: "Mot de passe actuel incorrect." };
+      const salt = crypto.randomBytes(16);
+      u.salt = salt.toString("hex"); u.hash = (await scrypt(pass, salt)).toString("hex"); u.sg = (u.sg || 0) + 1;
+      await putUser(u); return { ok: true };
+    });
+    if (!out.ok) return json(res, req, out.code || 500, { error: out.error || "Erreur du serveur." });
+    revokeSessions(low);   // déconnecte tous les appareils
+    return json(res, req, 200, { ok: true });
   }
   /* ── sauvegarde de progression ── */
-  if (url === "/api/save" && M === "GET") { const v = await DB.get("ta:s:" + low, true); return json(res, 200, v ? JSON.parse(v) : { t: 0, data: null }); }
+  if (url === "/api/save" && M === "GET") { const v = await DB.get("ta:s:" + low, true); return json(res, req, 200, v ? JSON.parse(v) : { t: 0, data: null }); }
   if (url === "/api/save" && M === "PUT") {
-    if (limited("sv:" + low, 40, 600000)) return json(res, 429, { error: "Trop de sauvegardes : patientez un instant." });
+    if (limited("sv:" + low, 40, 600000)) return json(res, req, 429, { error: "Trop de sauvegardes : patientez un instant." });
     const b = await readBody(req, 500000), data = b.data;
-    if (!data || typeof data !== "object" || Array.isArray(data)) return json(res, 400, { error: "Sauvegarde invalide." });
+    if (!data || typeof data !== "object" || Array.isArray(data)) return json(res, req, 400, { error: "Sauvegarde invalide." });
     const clean2 = {}; let size = 0;
-    for (const k of Object.keys(data)) { if (!SAVE_KEYS.test(k) || typeof data[k] !== "string") continue; size += k.length + data[k].length; if (size > SAVE_MAX) return json(res, 413, { error: "Sauvegarde trop volumineuse." }); clean2[k] = data[k]; }
-    return json(res, 200, await serial(async () => {
-      const cur = me.save, base = Number(b.base) || 0;
+    for (const k of Object.keys(data)) { if (!SAVE_KEYS.test(k) || typeof data[k] !== "string") continue; size += k.length + data[k].length; if (size > SAVE_MAX) return json(res, req, 413, { error: "Sauvegarde trop volumineuse." }); clean2[k] = data[k]; }
+    const saved = await serial(async () => {
+      const u = await getUser(low); if (!u) return { code: 401, error: "Compte introuvable.", auth: false };
+      const cur = u.save, base = Number(b.base) || 0;
       if (cur && cur.t !== base && !b.force) return { conflict: true, server: cur };                   // un autre appareil a sauvegardé entre-temps
       const t = Date.now(), keys = Object.keys(clean2), xpe = Math.max(parseInt(clean2.XPEarned) || 0, parseInt(clean2.XP) || 0);
-      me.save = { t, bytes: size, xp: parseInt(clean2.XP) || 0, xpe, res: keys.filter(k => k.startsWith("researched_")).length, tank: clean2.SelectedTank || "" };
-      await DB.set("ta:s:" + low, JSON.stringify({ t, data: clean2 }), 0, true); await putUser(me);
-      return { ok: true, t, save: me.save };
-    }));
+      u.save = { t, bytes: size, xp: parseInt(clean2.XP) || 0, xpe, res: keys.filter(k => k.startsWith("researched_")).length, tank: clean2.SelectedTank || "" };
+      await DB.set("ta:s:" + low, JSON.stringify({ t, data: clean2 }), 0, true); await putUser(u);
+      return { ok: true, t, save: u.save };
+    });
+    if (saved.code) return json(res, req, saved.code, { error: saved.error, auth: saved.auth });
+    return json(res, req, 200, saved);
   }
   /* ── amis ── */
-  if (url === "/api/friends" && M === "GET") return json(res, 200, await friendsPayload(me));
+  if (url === "/api/friends" && M === "GET") return json(res, req, 200, await friendsPayload(me));
   if (M === "POST" && (url === "/api/friends/add" || url === "/api/friends/respond" || url === "/api/friends/remove")) {
     const b = await readBody(req, 1000), tl = String(b.name || "").trim().toLowerCase();
-    if (!NAME_RE.test(tl) || tl === low) return json(res, 400, { error: "Pseudo invalide." });
-    if (limited("fr:" + low, 60, 600000)) return json(res, 429, { error: "Trop d'actions : patientez un instant." });
+    if (!NAME_RE.test(tl) || tl === low) return json(res, req, 400, { error: "Pseudo invalide." });
+    if (limited("fr:" + low, 60, 600000)) return json(res, req, 429, { error: "Trop d'actions : patientez un instant." });
     const r = await serial(async () => {
       const a = await getUser(low), t = await getUser(tl); if (!t) return { code: 404, error: "Aucun joueur nommé « " + String(b.name).slice(0, 16) + " »." };
       const rm = (arr, x) => { const i = arr.indexOf(x); if (i >= 0) arr.splice(i, 1); }, add = (arr, x) => { if (!arr.includes(x)) arr.push(x); };
@@ -290,10 +392,11 @@ async function handleAcc(req, res, url) {
       }
       rm(a.friends, tl); rm(t.friends, low); rm(a.outReq, tl); rm(t.inReq, low); rm(a.inReq, tl); rm(t.outReq, low); await putUser(a); await putUser(t); return { msg: "Ami retiré." };
     });
-    if (r.error) return json(res, r.code || 400, { error: r.error });
-    return json(res, 200, Object.assign({ msg: r.msg }, await friendsPayload(await getUser(low))));
+    if (r.error) return json(res, req, r.code || 400, { error: r.error });
+    const fresh = await getUser(low); if (!fresh) return json(res, req, 401, { error: "Compte introuvable.", auth: false });
+    return json(res, req, 200, Object.assign({ msg: r.msg }, await friendsPayload(fresh)));
   }
-  return json(res, 404, { error: "Route inconnue." });
+  return json(res, req, 404, { error: "Route inconnue." });
 }
 
 /* ───── Tunnel public (ssh → localhost.run), piloté depuis Réglages → Multijoueur ───── */
@@ -306,9 +409,12 @@ function lanAddrs() {
 }
 /* Requête venant de ce PC et non relayée par le tunnel (le tunnel ajoute X-Forwarded-For) */
 function isLocalReq(req) {
-  const a = req.socket.remoteAddress || "";
-  return (a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1") && !req.headers["x-forwarded-for"] && !req.headers["x-forwarded-host"];
+  const a = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+  return (a === "127.0.0.1" || a === "::1") && !req.headers["x-forwarded-for"] && !req.headers["x-forwarded-host"];
 }
+/* Le tunnel doit être protégé par un secret connu de l'hôte uniquement (TA_TUNNEL_KEY). */
+const TUNNEL_KEY = process.env.TA_TUNNEL_KEY || "";
+const tunnelAuthorized = req => isLocalReq(req) && !!TUNNEL_KEY && String(req.headers["x-ta-key"] || "") === TUNNEL_KEY;
 function tunnelFail(msg) { clearTimeout(tunnel.timer); tunnel.state = "error"; tunnel.error = msg; tunnel.url = null; if (tunnel.proc) { tunnel.stopping = true; try { tunnel.proc.kill(); } catch (e) { } } }
 /* Tunnel public. Si cloudflared (exe posé à côté de server.js) est présent, on l'utilise : plus rapide et
    sans ssh, ni compte, ni droits administrateur. Sinon repli sur ssh → localhost.run. */
@@ -324,7 +430,7 @@ function startTunnel() {
   let proc;
   try {
     proc = cf ? spawn(cf, ["tunnel", "--no-autoupdate", "--url", "http://localhost:" + PORT], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] })
-              : spawn("ssh", ["-o", "StrictHostKeyChecking=accept-new", "-o", "ServerAliveInterval=30", "-o", "ExitOnForwardFailure=yes", "-R", "80:localhost:" + PORT, "nokey@localhost.run"], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+              : spawn("ssh", ["-o", "StrictHostKeyChecking=yes", "-o", "ServerAliveInterval=30", "-o", "ExitOnForwardFailure=yes", "-R", "80:localhost:" + PORT, "nokey@localhost.run"], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
   }
   catch (e) { return tunnelFail("Impossible de lancer " + (cf ? "cloudflared" : "ssh") + " : " + (e.message || e)); }
   tunnel.proc = proc;
@@ -356,38 +462,43 @@ process.on("SIGINT", () => process.exit(0));
 
 /* ───── HTTP ───── */
 const server = http.createServer((req, res) => {
+  securityHeaders(res);
   let url; try { url = decodeURIComponent((req.url || "/").split("?")[0]); } catch (e) { res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }); return res.end("Adresse invalide"); }
-  if (url === "/api/lobby" || url === "/api/room") {      // liste des salons + joueurs en ligne (le lobby l'interroge toutes les ~2,5 s)
-    const q = new URLSearchParams((req.url.split("?")[1]) || "");
-    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization" });
-    const an = authNameSync(req); return res.end(JSON.stringify(lobbyInfo(clean(q.get("cid"), 40), q.get("name"), an && sessAcct(an))));
+  if (url.indexOf("\0") >= 0) { res.writeHead(400); return res.end(); }
+  if (url === "/api/lobby" || url === "/api/room") {      // liste publique des salons + joueurs en ligne
+    securityHeaders(res);
+    if (req.method === "OPTIONS") { res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization", "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Max-Age": "600" }); return res.end(); }
+    if (req.method !== "GET") { res.writeHead(405); return res.end(); }
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
+    return res.end(JSON.stringify(lobbyInfo()));
   }
   if (apiAccounts(req, res, url)) return;
   if (url === "/api/tunnel") {
     const local = isLocalReq(req);
     if (req.method === "POST" || req.method === "DELETE") {
-      if (!local || req.headers["x-ta"] !== "1") { res.writeHead(403); return res.end("Interdit"); }
+      if (!tunnelAuthorized(req)) { res.writeHead(403); return res.end("Interdit — définissez TA_TUNNEL_KEY et envoyez x-ta-key"); }
       if (req.method === "POST") startTunnel(); else stopTunnel();
     }
+    const allowed = local || tunnelAuthorized(req);                       // adresses LAN et port réservés à l'hôte / au porteur de la clé
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-    return res.end(JSON.stringify({ state: tunnel.state, url: tunnel.url, error: tunnel.error, kind: tunnel.kind || (findCloudflared() ? "cloudflare" : "ssh"), canControl: local, lan: lanAddrs(), port: PORT }));
+    return res.end(JSON.stringify({ state: tunnel.state, url: tunnel.url, error: tunnel.error, kind: tunnel.kind || (findCloudflared() ? "cloudflare" : "ssh"), canControl: tunnelAuthorized(req), needKey: !TUNNEL_KEY, lan: allowed ? lanAddrs() : [], port: allowed ? PORT : null }));
   }
-  if (url === "/api/health") { const miss = missingFiles(); res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ok: miss.length === 0, missing: miss, root: path.basename(ROOT), accounts: DB.kind, persistent: DB.kind === "upstash" })); }
+  if (url === "/api/health") { const miss = missingFiles(); res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ok: miss.length === 0, missing: miss, accounts: DB.kind, persistent: DB.kind === "upstash" })); }
   if (url === "/") url = "/lobby.html";
+  if (req.method !== "GET" && req.method !== "HEAD") { securityHeaders(res); res.writeHead(405); return res.end(); }
   const file = path.normalize(path.join(ROOT, url));
-  if (!file.startsWith(ROOT) || /(^|[\\/])\.|node_modules/.test(path.relative(ROOT, file))) { res.writeHead(403); return res.end("Interdit"); }
+  if (file !== ROOT && !file.startsWith(ROOT + path.sep) || !isPublicFile(file)) { securityHeaders(res); res.writeHead(403); return res.end("Interdit"); }
   serveStatic(req, res, file);
 });
 
-/* ───── Fichiers statiques : compression + ETag + cache ─────
-   Le tunnel (ssh / Cloudflare) est lent et chaque fichier coûte un aller-retour :
-   on envoie donc les textes compressés (brotli/gzip, calculés UNE fois puis gardés en
-   mémoire), on répond 304 si le navigateur a déjà la bonne version, et les visiteurs
-   distants gardent les fichiers en cache 10 min (l'hôte, lui, revalide toujours). */
+/* ───── Fichiers statiques : compression + ETag, liste blanche ─────
+   Le tunnel (ssh / Cloudflare) est lent : les textes sont compressés une fois (brotli/gzip)
+   et gardés en mémoire, avec ETag/304. Les pages sont en revanche toujours revalidées
+   (no-store) pour éviter de servir une ancienne version après une mise à jour. */
 /* Contrôle d'installation : les pages HTML appellent des scripts / styles / modèles — tous présents ? */
 function missingFiles() {
   const miss = new Set();
-  for (const page of ["lobby.html", "arena.html", "editor.html"]) {
+  for (const page of ["lobby.html", "arena.html", "editor.html", "cinematic-editor.html"]) {
     let h; try { h = fs.readFileSync(path.join(ROOT, page), "utf8"); } catch (e) { miss.add(page); continue; }
     const re = /(?:src|href)="([^"#?]+)"/g; let m;
     while ((m = re.exec(h))) { const u = m[1]; if (/^(https?:|\/\/|data:|mailto:)/.test(u) || u.endsWith(".html")) continue; if (!fs.existsSync(path.join(ROOT, u)) && !fs.existsSync(path.join(ROOT, path.basename(u)))) miss.add(u); }
@@ -399,30 +510,46 @@ const fileCache = new Map();   // chemin → { mtime, size, etag, raw, gz, br }
 /* Dépôt « à plat » : si les fichiers ont été envoyés sans leurs dossiers (js/, css/, models/…),
    /js/net.js est servi depuis net.js à la racine. Les noms de fichiers du jeu sont tous uniques. */
 const PRIVATE_FILES = new Set(["server.js", "package.json", "package-lock.json", "render.yaml", ".gitignore"]);
+/* Liste blanche : seuls ces dossiers et extensions sont publics. Tout le reste
+   (data/, node/, cloudflared*.exe, *.tmp, scripts .bat, fichiers cachés…) est refusé. */
+const PUBLIC_DIRS = new Set(["js", "css", "models", "docs"]);
+const PUBLIC_EXT = new Set([".html", ".js", ".css", ".png", ".jpg", ".svg", ".glb", ".gltf", ".obj", ".txt", ".ico", ".woff2", ".md"]);
+function isPublicFile(file) {
+  const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+  if (!rel || rel.startsWith(".") || /(^|\/)\./.test(rel) || /node_modules/.test(rel)) return false;
+  const bn = path.basename(file).toLowerCase();
+  if (bn.startsWith(".") || PRIVATE_FILES.has(bn) || bn.endsWith(".bat")) return false;
+  if (!PUBLIC_EXT.has(path.extname(bn))) return false;
+  const parts = rel.split("/");
+  return parts.length === 1 || PUBLIC_DIRS.has(parts[0].toLowerCase());
+}
 function flatFallback(file) {
   const b = path.basename(file), alt = path.join(ROOT, b);
-  if (alt === file || b.startsWith(".") || PRIVATE_FILES.has(b.toLowerCase()) || b.toLowerCase().endsWith(".bat")) return null;
+  if (alt === file || !isPublicFile(alt)) return null;
   try { if (fs.statSync(alt).isFile()) return alt; } catch (e) { }
   return null;
 }
 function serveStatic(req, res, file) {
-  const bn = path.basename(file).toLowerCase();
-  if (PRIVATE_FILES.has(bn) || bn.endsWith(".bat")) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); return res.end("Introuvable"); }
+  if (!isPublicFile(file)) { securityHeaders(res); res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); return res.end("Introuvable"); }
   fs.stat(file, (e, st) => {
     if (e || !st.isFile()) { const alt = flatFallback(file); if (alt) return serveStatic(req, res, alt); }
     if (e || !st.isFile()) {
+      securityHeaders(res);
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
       return res.end("Fichier introuvable sur le serveur : " + path.relative(ROOT, file).replace(/\\/g, "/") + "\n\nLe dossier correspondant (js, css, models…) n'a probablement pas été envoyé avec le jeu.\nVérifiez la liste des fichiers du dépôt GitHub, ou ouvrez /api/health pour voir tout ce qui manque.");
     }
     const ext = path.extname(file).toLowerCase(), isText = TEXT_EXT.has(ext), type = MIME[ext] || "application/octet-stream";
     const etag = '"' + st.size.toString(36) + "-" + Math.round(st.mtimeMs).toString(36) + '"';
-    const local = isLocalReq(req);
     const cc = "no-cache, no-store, must-revalidate";
+    securityHeaders(res);
     if (req.headers["if-none-match"] === etag) { res.writeHead(304, { ETag: etag, "Cache-Control": cc }); return res.end(); }
     const head = { "Content-Type": type, "Cache-Control": cc, ETag: etag, Vary: "Accept-Encoding" };
     if (!isText || req.method === "HEAD") {          // binaires (modèles 3D, images) : envoi en flux
       head["Content-Length"] = st.size; res.writeHead(200, head);
-      return req.method === "HEAD" ? res.end() : fs.createReadStream(file).pipe(res);
+      if (req.method === "HEAD") return res.end();
+      const stream = fs.createReadStream(file);
+      stream.on("error", () => { if (!res.writableEnded) res.destroy(); });   // fichier supprimé entre stat() et lecture
+      return stream.pipe(res);
     }
     let c = fileCache.get(file);
     const send = () => {
@@ -455,17 +582,24 @@ function frame(op, payload) {
 function sendTo(sock, obj) { if (sock && !sock.destroyed && sock.writable) sock.write(frame(0x1, Buffer.from(JSON.stringify(obj)))); }
 
 server.on("upgrade", (req, sock) => {
-  const key = req.headers["sec-websocket-key"];
-  if (!key || (req.headers.upgrade || "").toLowerCase() !== "websocket") { sock.destroy(); return; }
+  const key = req.headers["sec-websocket-key"], ver = String(req.headers["sec-websocket-version"] || "");
+  if (!key || !/^[A-Za-z0-9+/]{22}==$/.test(key) || (req.headers.upgrade || "").toLowerCase() !== "websocket") { sock.destroy(); return; }
+  if (ver && ver !== "13" && ver !== "8") { sock.write("HTTP/1.1 426 Upgrade Required\r\nSec-WebSocket-Version: 13\r\n\r\n"); sock.destroy(); return; }
   const accept = crypto.createHash("sha1").update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
   sock.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n");
   sock.setNoDelay(true);
-  const client = { sock, buf: Buffer.alloc(0), cid: null, name: "Joueur", room: null, me: null, inGame: false, frag: null, lastChat: 0 };
+  const client = { sock, ip: ipOf(req), buf: Buffer.alloc(0), cid: null, name: "Joueur", room: null, me: null, inGame: false, frag: null, lastChat: 0, msgT: Date.now(), msgN: 0 };
+  let alive = true;
+  const hb = setInterval(() => { if (sock.destroyed) return; if (!alive) return sock.destroy(); alive = false; try { sock.write(frame(0x9, Buffer.alloc(0))); } catch (e) { } }, 30000);
+  hb.unref();
   sock.on("data", d => {
     client.buf = Buffer.concat([client.buf, d]);
+    if (client.buf.length > 2 << 20) { sock.destroy(); return; }
     for (; ;) {
       const b = client.buf; if (b.length < 2) return;
       const op = b[0] & 0x0f, fin = !!(b[0] & 0x80), masked = !!(b[1] & 0x80); let len = b[1] & 0x7f, off = 2;
+      if (b[0] & 0x70 || !masked) { sock.destroy(); return; }   // RSV réservés / client non masqué
+      if (op >= 0x8 && (!fin || len > 125)) { sock.destroy(); return; }
       if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); off = 4; }
       else if (len === 127) { if (b.length < 10) return; len = Number(b.readBigUInt64BE(2)); off = 10; }
       if (len > 1 << 20) { sock.destroy(); return; }
@@ -475,14 +609,14 @@ server.on("upgrade", (req, sock) => {
       client.buf = b.slice(off + (masked ? 4 : 0) + len);
       if (op === 0x8) { sock.end(frame(0x8, Buffer.alloc(0))); return; }
       if (op === 0x9) { sock.write(frame(0xA, payload)); continue; }
-      if (op === 0xA) continue;
+      if (op === 0xA) { alive = true; continue; }
       if (op === 0x1 || op === 0x0) {
         client.frag = op === 0x1 ? payload : Buffer.concat([client.frag || Buffer.alloc(0), payload]);
         if (fin) { const txt = client.frag.toString("utf8"); client.frag = null; try { onMessage(client, JSON.parse(txt)); } catch (e) { /* message invalide ignoré */ } }
       }
     }
   });
-  let closed = false; const gone = () => { if (closed) return; closed = true; onGone(client); };
+  let closed = false; const gone = () => { if (closed) return; closed = true; clearInterval(hb); onGone(client); };
   sock.on("close", gone); sock.on("error", gone);
 });
 
@@ -503,9 +637,11 @@ function onGone(c) {
 
 async function helloAsync(c, m) {
   const cid = clean(m.cid, 40); if (!cid) return; let name = clean(m.name, 16) || "Joueur", acct = null;
-  if (m.token) { try { const low = await resolveToken(m.token); if (low) { const u = await getUser(low); if (u) acct = { low, name: u.name }; } } catch (e) { } }
+  if (m.token) { try { const low = await tokenUser(m.token); if (low) { const u = await getUser(low); if (u) acct = { low, name: u.name }; } } catch (e) { } }
+  // Un cid volé ne doit pas permettre de reprendre le siège d'un joueur encore connecté.
+  if (!adoptCid(c, cid)) return errTo(c, "Cette identité est déjà connectée. Attendez quelques secondes ou changez d'identifiant réseau.", true);
   if (acct) name = acct.name; else if (await isRegistered(name.toLowerCase())) name = name.slice(0, 11) + " (inv.)";   // un invité ne peut pas usurper le pseudo d'un compte
-  c.cid = cid; c.acct = acct ? acct.low : null; c.name = name; touchPresence(cid, name, c, acct);
+  c.acct = acct ? acct.low : null; c.name = name; touchPresence(cid, name, c, acct);
   const [r, me] = findMemberRoom(cid);
   if (r && me) { attach(c, r, me, false); me.name = name; me.acct = !!acct; sendTo(c.sock, { t: "room", room: roomPub(r, true), you: me.mid }); pushRoom(r); }
   else sendTo(c.sock, { t: "hi", acct: acct ? acct.name : null });
@@ -514,19 +650,33 @@ async function helloAsync(c, m) {
 function onMessage(c, m) {
   const t = m.t, sock = c.sock;
   /* ── en jeu : relais entre les joueurs du salon ── */
-  if (c.inGame && c.room && c.me) {
+  if (c.inGame && c.room && c.me && c.me.sock === c.sock) {
     const r = c.room;
-    if (t === "s" || t === "shot" || t === "dead" || t === "resp" || t === "bots" || t === "chat" || t === "ev" || m.to !== undefined || t) {
-      m.from = c.me.pid;
-      if (m.to) { const x = r.byPid.get(m.to); if (x && x.sock && x.inGame) sendTo(x.sock, m); }
-      else { const data = frame(0x1, Buffer.from(JSON.stringify(m))); for (const x of r.members.values()) if (x !== c.me && x.inGame && x.sock && x.sock.writable) x.sock.write(data); }
+    if (!GAME_TYPES.has(t)) return;                  // plus de relais générique « || t »
+    const now = Date.now();
+    if (now - c.msgT >= 1000) { c.msgT = now; c.msgN = 0; }
+    if (++c.msgN > 160) return;                      // ~160 messages/s max par socket
+    if (JSON.stringify(m).length > 16384) return;
+    m.from = c.me.pid;
+    if (m.to !== undefined) {                        // destinataire unique : doit être un joueur de la salle
+      const x = r.byPid.get(clean(m.to, 12)); if (x && x !== c.me && x.sock && x.inGame) sendTo(x.sock, m);
+      return;
     }
+    const data = frame(0x1, Buffer.from(JSON.stringify(m)));
+    for (const x of r.members.values()) if (x !== c.me && x.inGame && x.sock && x.sock.writable) x.sock.write(data);
     return;
   }
   /* ── identification ── */
-  if (t === "hello") { c.helloP = helloAsync(c, m).catch(e => console.error("[hello]", e.message)).then(() => { c.helloP = null; }); return; }
+  if (t === "hello") {
+    if (limited("hello:" + c.ip, 12, 60000)) return errTo(c, "Trop de connexions. Réessayez dans une minute.", true);
+    c.helloP = helloAsync(c, m).catch(e => console.error("[hello]", e.message)).then(() => { c.helloP = null; }); return;
+  }
   if (c.helloP) { c.helloP.then(() => onMessage(c, m)); return; }          // les messages suivants attendent la fin de l'identification
-  if (t === "enter" && !c.cid) { c.cid = clean(m.cid, 40); c.name = "Joueur"; }
+  if (t === "enter" && !c.cid) {
+    const cid2 = clean(m.cid, 40);
+    if (!adoptCid(c, cid2)) return errTo(c, "Cette identité est déjà connectée. Rechargez la page dans quelques secondes.", true);
+    c.name = clean(m.name, 16) || "Joueur";
+  }
   if (!c.cid) return;
 
   /* ── entrée en arène (page arena.html) ── */
@@ -556,7 +706,11 @@ function onMessage(c, m) {
   }
   if (t === "join") {
     const r = rooms.get(m.room); if (!r) return errTo(c, "Ce salon n'existe plus.");
-    const known = r.members.get(c.cid); if (known) { attach(c, r, known, false); sendTo(sock, { t: "room", room: roomPub(r, true), you: known.mid }); pushRoom(r); return; }
+    const known = r.members.get(c.cid);
+    if (known) {
+      if (known.sock && known.sock !== sock && !known.sock.destroyed) return errTo(c, "Cette identité est déjà connectée au salon.", true);
+      attach(c, r, known, false); sendTo(sock, { t: "room", room: roomPub(r, true), you: known.mid }); pushRoom(r); return;
+    }
     if (r.pass && r.pass !== clean(m.pass, 20)) return errTo(c, "Mot de passe incorrect.");
     if (r.members.size >= r.cfg.maxPlayers) return errTo(c, "Ce salon est plein.");
     if (r.state === "playing" && !r.cfg.allowLate) return errTo(c, "Partie en cours : l'hôte a désactivé l'entrée en cours de jeu.");
@@ -566,6 +720,8 @@ function onMessage(c, m) {
     sendTo(sock, { t: "room", room: roomPub(r, true), you: c.me.mid }); pushRoom(r); return;
   }
   const r = c.room, me = c.me; if (!r || !me) return;
+  // Une ancienne socket conservant le même cid ne doit plus pouvoir agir dans le salon.
+  if (me.sock !== c.sock) return;
   const isHost = r.hostCid === c.cid;
   if (t === "leave") { leaveRoom(c); sendTo(sock, { t: "hi" }); return; }
   if (t === "ready") { me.ready = !!m.v; pushRoom(r); return; }
@@ -604,7 +760,14 @@ function onMessage(c, m) {
       sysChat(r, target.name + " a été expulsé par l'hôte"); removeMember(r, target, "Vous avez été expulsé du salon par l'hôte."); return;
     }
     if (t === "host") { const target = byMid(r, m.mid); if (!target || target === me) return; r.hostCid = target.cid; sysChat(r, c.name + " passe l'hôte à " + target.name); pushRoom(r); return; }
-    if (t === "reset") { if (r.state !== "playing") return; r.state = "lobby"; r.sawGame = false; r.simHostCid = null; for (const x of r.members.values()) { x.pid = null; x.ready = false; } r.byPid.clear(); sysChat(r, "L'hôte a rouvert le salon"); pushRoom(r); return; }
+    if (t === "reset") {
+      if (r.state !== "playing") return;
+      // Prévenir d'abord les joueurs encore dans l'arène : on efface inGame juste après.
+      for (const x of r.members.values()) if (x.inGame) sendTo(x.sock, { t: "leave", all: true });
+      r.state = "lobby"; r.sawGame = false; r.simHostCid = null; r.byPid.clear();
+      for (const x of r.members.values()) { x.pid = null; x.ready = false; x.inGame = false; if (x.client && x.client.room === r) x.client.inGame = false; }
+      sysChat(r, "L'hôte a rouvert le salon"); pushRoom(r); return;
+    }
     if (t === "start") {
       if (r.state !== "lobby") return;
       if (r.cfg.weather === "auto" && WEATHERS.includes(m.weather) && m.weather !== "auto") r.cfg.weather = m.weather;       // « auto » résolu par l'hôte pour que tout le monde voie le même temps
@@ -624,6 +787,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log("\n  TankArena — serveur multijoueur local\n  ───────────────────────────────────");
   console.log("  Sur ce PC :        http://localhost:" + PORT);
   for (const list of Object.values(os.networkInterfaces())) for (const i of list || []) if (i.family === "IPv4" && !i.internal) console.log("  Pour vos amis :    http://" + i.address + ":" + PORT + "   (même wifi)");
+  if (!TUNNEL_KEY) console.log("  Tunnel public : définissez TA_TUNNEL_KEY=<secret> pour autoriser l'ouverture depuis le QG.");
   console.log("\n  Ouvrez l'adresse, choisissez « Multijoueur » dans Jouer, puis Déployer.\n  Ctrl+C pour arrêter.\n");
 });
 server.on("error", e => { console.error(e.code === "EADDRINUSE" ? "Le port " + PORT + " est déjà utilisé (PORT=3001 node server.js)." : e); process.exit(1); });

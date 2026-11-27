@@ -14,7 +14,15 @@ const Net = (function () {
   const r1 = v => Math.round(v * 10) / 10, r3 = v => Math.round(v * 1000) / 1000;
   const find = id => id === N.id ? localTank : (N.peers.get(id) || null);
   const note = txt => { try { HUD.toast(txt); } catch (e) { } };
-  let botSeq = 0, tickN = 0;
+  let botSeq = 0, tickN = 0, retries = 0, reconTimer = null;
+  function scheduleReconnect() {
+    clearTimeout(reconTimer);
+    if (retries >= 12) { note("Reconnexion impossible : rechargez la page pour rejoindre la partie."); return; }
+    const delay = Math.min(9000, Math.round(800 + 600 * retries++));
+    reconTimer = setTimeout(() => {
+      N.connect().then(() => { retries = 0; note("Reconnecté au serveur."); }).catch(() => scheduleReconnect());
+    }, delay);
+  }
 
   /* ───── Copie distante d'un char (joueur ou bot de l'hôte) ───── */
   class NetTank extends Tank {
@@ -42,9 +50,15 @@ const Net = (function () {
       this._pose();
       if (this._firedTimer > 0) this._firedTimer--;
     }
-    /* Les dégâts sont décidés par la machine du propriétaire : ici, impact visuel seulement */
-    takeShellHit(shell) {
-      FX.impact(shell.x * PX, shell.z * PX, shell.y * PX, "blocked"); playImpactSound("blocked", shell.x, shell.y);
+    /* Les dégâts sont décidés par la machine du propriétaire : ici, impact visuel seulement.
+       On calcule quand même le type d'impact pour ne pas afficher « bloqué » sur une perforation. */
+    takeShellHit(shell, hit) {
+      let kind = "blocked";
+      try {
+        const res = decideImpact(shell, resolveShellImpact(this, shell, hit));
+        kind = res.outcome === "ricochet" ? "ricochet" : (res.outcome === "pen" || res.outcome === "overmatch" || res.outcome === "spall") ? "pen" : "blocked";
+      } catch (e) { }
+      FX.impact(shell.x * PX, shell.z * PX, shell.y * PX, kind); playImpactSound(kind, shell.x, shell.y);
     }
   }
 
@@ -59,7 +73,8 @@ const Net = (function () {
   }
   function dropPeer(id) {
     const t = N.peers.get(id); N.peers.delete(id);
-    if (t) { t.kill(); if (t.view) World.S.scene.remove(t.view.root); }
+    // Les bots enregistrés par l'hôte (ids « b… ») sont de vrais Tank locaux : on ne les détruit pas.
+    if (t instanceof NetTank) { t.kill(); if (t.view) World.S.scene.remove(t.view.root); }
   }
 
   /* ───── Connexion (avant la création du monde : le thème de carte vient de l'hôte) ───── */
@@ -75,9 +90,18 @@ const Net = (function () {
       ws.onerror = () => fail("Connexion impossible à " + server);
       ws.onmessage = ev => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-        if (m.t === "err" && !done) return fail(m.msg || "Refusé par le serveur");
+        if (m.t === "err") {
+          if (!done) return fail(m.msg || "Refusé par le serveur");
+          if (/identité est déjà connectée/i.test(m.msg || "")) {
+            // Reconnexion trop rapide (ancienne socket encore vivante pour le même cid) : on réessaie.
+            ws.onclose = null; try { ws.close(); } catch (e) { }
+            N.on = false; scheduleReconnect();
+          }
+          return;
+        }
         if (m.t === "welcome" && !done) {
           done = true; clearTimeout(to);
+          const wasOn = N.on;
           N.id = m.id; N.team = m.team; N.host = m.host; N.hostId = m.hostId; N.cfg = m.cfg || {}; N.welcome = m; N.on = true;
           // la salle impose sa carte : si elle diffère de celle chargée, on recharge avec la bonne
           if (N.cfg.theme && N.cfg.theme !== MAP_THEME && !sessionStorage.getItem("netReload")) {
@@ -89,12 +113,24 @@ const Net = (function () {
           { const mine = N.team === "B" ? "botsB" : "botsA", other = N.team === "B" ? "botsA" : "botsB";   // les bots d'une équipe sont ses alliés
             if (N.cfg[mine] !== undefined) ARENA_CFG.allies = N.cfg[mine]; if (N.cfg[other] !== undefined) ARENA_CFG.enemies = N.cfg[other];
             for (const k of ["difficulty", "scoreToWin", "respawnBots", "caps"]) if (N.cfg[k] !== undefined) ARENA_CFG[k] = N.cfg[k]; }
+          if (wasOn) { for (const id of [...N.peers.keys()]) dropPeer(id); N.populate(); }
           resolve(m);
         } else onMsg(m);
       };
-      ws.onclose = () => { if (!done) fail("Connexion fermée par le serveur"); else if (N.on) { N.on = false; note("Connexion au serveur perdue — la partie continue en local"); } };
+      ws.onclose = () => {
+        clearTimeout(to);
+        if (!done) return fail("Connexion fermée par le serveur");
+        if (N.on) { N.on = false; note("Connexion au serveur perdue — tentative de reconnexion…"); scheduleReconnect(); }
+      };
     });
   };
+
+  /* Sortie de l'arène après « reset » ou expulsion : on coupe la reconnexion auto avant de naviguer. */
+  function leaveToLobby() {
+    N.on = false; clearTimeout(reconTimer);
+    try { if (N.ws) { N.ws.onclose = null; N.ws.onmessage = null; N.ws.close(); } } catch (e) { }
+    setTimeout(() => { location.href = "lobby.html#play"; }, 1200);
+  }
 
   /* Après la création du joueur local : crée les copies des autres joueurs */
   N.populate = function () {
@@ -129,11 +165,18 @@ const Net = (function () {
   function onMsg(m) {
     switch (m.t) {
       case "join": addPeer(m.p); note(m.p.name + " a rejoint (équipe " + m.p.team + ")"); if (N.host) send({ t: "bots", to: m.p.id, l: botList(), sc: teamScore }); break;
-      case "leave": { const t = N.peers.get(m.id); if (t) note((t._playerName || "Un joueur") + " a quitté la partie"); dropPeer(m.id); break; }
+      case "leave": {
+        if (m.all) {                         // l'hôte a rouvert le salon : on quitte l'arène proprement
+          note("L'hôte a rouvert le salon — retour au QG…");
+          for (const id of [...N.peers.keys()]) dropPeer(id);
+          leaveToLobby(); break;
+        }
+        const t = N.peers.get(m.id); if (t) note((t._playerName || "Un joueur") + " a quitté la partie"); dropPeer(m.id); break;
+      }
       case "bots": for (const b of m.l || []) addPeer(b); if (m.sc && !N.host) { teamScore.A = m.sc.A; teamScore.B = m.sc.B; } break;
       case "host": N.hostId = m.id; if (m.id === N.id) becomeHost(); break;
       case "err": note(m.msg || "Erreur du serveur"); break;
-      case "kicked": note(m.why || "Vous avez quitté le salon"); break;
+      case "kicked": note(m.why || "Vous avez quitté le salon"); leaveToLobby(); break;
       case "s": for (const e of m.l) {
         const t = N.peers.get(e[0]); if (!t || t.destroyed || !t.remote) continue;
         const s = { x: e[1], y: e[2], a: e[3], tu: e[4], el: e[5] * 180 / Math.PI, sp: e[6], hp: e[8] };

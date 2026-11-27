@@ -295,15 +295,15 @@ class Shell extends Item {
     this._orient();
   }
 
-  _hitTank(target, hit, remote, pid) {
+  _hitTank(target, hit) {
     this.currentPenetration = this.getPenetration(this.travel * PX);
     if (this.type === "HEAT") this.currentPenetration = this.penetration0;
     if (this.type === "shrapnel") this.damage = Math.round(this.damage * 0.65);
-    const wx = this.x * PX, wy = this.z * PX, wz = this.y * PX;
     this._finish();
-    if (this.type === "fumigène") { FX.smokeScreen(wx, wy, wz); addDamageEvent("blocked", "FUMÉE déployée"); return; }
+    if (this.type === "fumigène") { FX.smokeScreen(this.x * PX, this.z * PX, this.y * PX); addDamageEvent("blocked", "FUMÉE déployée"); return; }
     if (this.owner === localTank) battleStats.shotsHit++;
-    if (remote) { target.takeShellHitNet(this, hit, pid); return; }
+    // Les obus distants sont simulés ici ; seul le char local peut être blessé.
+    // Les NetTank ont leur propre takeShellHit() (impact visuel uniquement).
     target.takeShellHit(this, hit);
   }
 }
@@ -716,8 +716,12 @@ function separateTanks() {
     const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), min = ra + rb;
     if (d < min && d > 0.01) {
       const push = (min - d) * 0.5, nx = dx / d, ny = dy / d;
-      if (a instanceof Tank) { a.x -= nx * push; a.y -= ny * push; a.speed *= 0.97; }
-      if (b instanceof Tank) { b.x += nx * push; b.y += ny * push; b.speed *= 0.97; }
+      // On annule le déplacement s'il enfonce un char dans un bâtiment ou dans l'eau.
+      const ax = a.x, ay = a.y, bx = b.x, by = b.y;
+      a.x -= nx * push; a.y -= ny * push; a.speed *= 0.97;
+      b.x += nx * push; b.y += ny * push; b.speed *= 0.97;
+      if (obstacleBlocksPoint(a.x, a.y, ra * 0.6)) { a.x = ax; a.y = ay; }
+      if (obstacleBlocksPoint(b.x, b.y, rb * 0.6)) { b.x = bx; b.y = by; }
     }
   }
 }

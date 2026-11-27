@@ -1,6 +1,6 @@
 /* ==========================================================================
-   LOBBY-SECTIONS.JS — Les six sections du poste de commandement :
-   01 QG · 02 Combat · 03 Hangar · 04 Recherche · 05 Carrière · 06 Réglages.
+   LOBBY-SECTIONS.JS — Les huit sections du poste de commandement :
+   01 QG · 02 Combat · 03 Hangar · 04 Recherche · 05 Carrière · 06 Réglages · 07 Atelier · 08 Compte.
    Toutes les valeurs affichées proviennent des données réelles du jeu
    (shared-data.js, tank-catalog.js, Store) — aucune information factice.
    ========================================================================== */
@@ -49,22 +49,25 @@ const Multi = {
   statusHTML() {
     const r = Multi.room;
     if (!r) return `<b style="color:var(--warn,#ff8a3d)">Serveur introuvable.</b> Lancez <code>node server.js</code> sur le PC hôte puis vérifiez l'adresse ci-dessus.`;
-    if (!r.open) return `Serveur joignable · aucune partie en cours : <b>vous la créez</b> et devenez l'hôte.`;
-    const th = r.cfg && r.cfg.theme ? (MAP_THEME_LABELS[r.cfg.theme] || r.cfg.theme) : "?";
-    return `Partie de <b>${escHTML(r.host || "?")}</b> · ${th} · ${r.players.length} joueur${r.players.length > 1 ? "s" : ""} (${r.players.map(p => escHTML(p.name)).join(", ")}) → <b>vous la rejoignez</b>.`;
+    const rooms = Array.isArray(r.rooms) ? r.rooms : [];
+    if (!rooms.length) return `Serveur joignable · aucune partie en cours : <b>vous la créez</b> et devenez l'hôte.`;
+    const s = rooms[0], th = MAP_THEME_LABELS[s.theme] || s.theme || "?";
+    return `Partie de <b>${escHTML(s.host || "?")}</b> · ${escHTML(th)} · ${s.players || 0} joueur${s.players === 1 ? "" : "s"} · ${rooms.length} salon${rooms.length > 1 ? "s" : ""}`;
   }
 };
 /* ───── Réglages → Multijoueur : lien public (tunnel) piloté par server.js ───── */
 const MultiHost = {
-  st: undefined, poll: null,
+  st: undefined, poll: null, key: "",
   async call(method) {
-    try { const r = await fetch("/api/tunnel", { method, cache: "no-store", headers: { "X-TA": "1" } }); if (!r.ok) throw new Error("HTTP " + r.status); MultiHost.st = await r.json(); } catch (e) { MultiHost.st = null; }
+    const h = {}; if (MultiHost.key) h["X-TA-Key"] = MultiHost.key;
+    try { const r = await fetch("/api/tunnel", { method, cache: "no-store", headers: h }); if (!r.ok) throw new Error("HTTP " + r.status); MultiHost.st = await r.json(); } catch (e) { MultiHost.st = null; }
     return MultiHost.st;
   },
   html() {
     const s = MultiHost.st;
     if (s === undefined) return `<div class="note">Recherche du serveur…</div>`;
     if (s === null) return `<div class="note"><b>Serveur non détecté.</b> Fermez cette page, double-cliquez sur <b>Lancer_serveur.bat</b> (dans le dossier du jeu), puis ouvrez <b>http://localhost:3000</b> dans le navigateur.</div>`;
+    if (s.needKey && !MultiHost.key) return `<div class="field"><div><b>Lien public</b><small>Le serveur exige la clé TA_TUNNEL_KEY (définie avant son lancement)</small></div><input class="inp" id="mh-key" type="password" placeholder="Clé du serveur" style="max-width:220px"></div><div style="margin-top:8px"><button class="btn sm" data-a="mhKey">Valider la clé</button></div>`;
     const ctl = s.canControl ? "" : "disabled";
     const lan = s.lan && s.lan.length ? `<div class="field"><div><b>Même wifi</b><small>Fonctionne seulement si le pare-feu Windows l'autorise</small></div><span class="num">${s.lan.map(escHTML).join("<br>")}</span></div>` : "";
     let t;
@@ -236,7 +239,7 @@ const SecHQ = {
         <div class="wt-panel card cut">
           <div class="wt-panel-head">Dernière partie</div>
           <div class="wt-panel-body">
-            ${hist ? `<div class="wt-history"><span class="r ${hist.result === "WIN" ? "w" : "l"}">${hist.result === "WIN" ? "V" : "D"}</span><div><strong>${escHTML(hist.tank || "")}</strong><small>${MODE_NAME[hist.mode] || hist.mode} · ${MAP_THEME_LABELS[hist.map] || hist.map}</small></div><b class="num">+${fmt(hist.xp || 0)}</b></div>` : `<div class="muted">Aucune partie jouée.</div>`}
+            ${hist ? `<div class="wt-history"><span class="r ${hist.result === "WIN" ? "w" : "l"}">${hist.result === "WIN" ? "V" : "D"}</span><div><strong>${escHTML(hist.tank || "")}</strong><small>${escHTML(MODE_NAME[hist.mode] || hist.mode || "—")} · ${escHTML(MAP_THEME_LABELS[hist.map] || hist.map || "—")}</small></div><b class="num">+${fmt(hist.xp || 0)}</b></div>` : `<div class="muted">Aucune partie jouée.</div>`}
           </div>
         </div>
       </div>
@@ -596,7 +599,7 @@ const SecCareer = {
     el.innerHTML = `<div class="kpis">${[["Parties", fmt(s.parties)], ["Victoires", s.winrate === null ? "—" : s.wins + " (" + s.winrate + " %)"], ["Éliminations", fmt(s.kills)], ["Ratio élim./morts", s.kd === null ? "—" : s.kd], ["Dégâts infligés", fmt(s.damage)], ["Précision", s.acc === null ? "—" : s.acc + " %"]].map(([k, v]) => `<div class="kpi"><span>${k}</span><b class="num">${v}</b></div>`).join("")}</div>
       <div class="grid2" style="margin-top:20px;align-items:start">
         <div class="card"><h3>Jalons <span class="muted" style="text-transform:none;letter-spacing:.04em;font-size:13px">XP à réclamer</span></h3><div class="body"><div class="miles" style="grid-template-columns:1fr">${M.map(m => `<div class="mil ${m.claimed ? "claimed" : ""}"><div class="top"><b>${m.name}</b><span class="rw">+${fmt(m.xp)} XP</span></div><small>${m.desc}</small><div class="bar"><i style="width:${Math.round(m.cur / m.goal * 100)}%;${m.claimed ? "background:var(--ok)" : ""}"></i></div><div class="row"><span class="num muted" style="font-size:13px">${fmt(m.cur)} / ${fmt(m.goal)}</span>${m.claimed ? `<span class="tag ok">Réclamé</span>` : `<button class="btn sm primary" data-a="claim" data-id="${m.id}" ${m.ready ? "" : "disabled"}>Réclamer</button>`}</div></div>`).join("")}</div></div></div>
-        <div class="card"><h3>Historique <span class="muted" style="text-transform:none;letter-spacing:.04em;font-size:13px">12 dernières parties</span></h3><div class="body" style="padding:0">${H.length ? `<table class="hist-t"><thead><tr><th>Issue</th><th>Véhicule</th><th>Mode · carte</th><th>Élim.</th><th>XP</th></tr></thead><tbody>${H.map(h => `<tr><td class="${h.result === "WIN" ? "w" : "l"}">${h.result === "WIN" ? "Victoire" : "Défaite"}</td><td>${escHTML(h.tank || "—")}</td><td>${MODE_NAME[h.mode] || h.mode || "—"} · ${MAP_THEME_LABELS[h.map] || h.map}<div class="faint" style="font-size:12px">${h.score || ""}</div></td><td class="num">${h.kills}</td><td class="num" style="color:var(--amber)">+${fmt(h.xp || 0)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">Aucune partie jouée. Les statistiques apparaissent après votre premier combat (hors entraînement).</div>`}</div></div></div>`;
+        <div class="card"><h3>Historique <span class="muted" style="text-transform:none;letter-spacing:.04em;font-size:13px">12 dernières parties</span></h3><div class="body" style="padding:0">${H.length ? `<table class="hist-t"><thead><tr><th>Issue</th><th>Véhicule</th><th>Mode · carte</th><th>Élim.</th><th>XP</th></tr></thead><tbody>${H.map(h => `<tr><td class="${h.result === "WIN" ? "w" : "l"}">${h.result === "WIN" ? "Victoire" : "Défaite"}</td><td>${escHTML(h.tank || "—")}</td><td>${escHTML(MODE_NAME[h.mode] || h.mode || "—")} · ${escHTML(MAP_THEME_LABELS[h.map] || h.map || "—")}<div class="faint" style="font-size:12px">${escHTML(h.score || "")}</div></td><td class="num">${h.kills}</td><td class="num" style="color:var(--amber)">+${fmt(h.xp || 0)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">Aucune partie jouée. Les statistiques apparaissent après votre premier combat (hors entraînement).</div>`}</div></div></div>`;
     on(el, { claim: d => { const x = Store.claim(d.id); if (x) { toast(`+${x} XP réclamés`); refreshAll(); SecCareer.render(el); } } });
   }
 };
@@ -648,6 +651,7 @@ const SecSettings = {
     el.querySelectorAll("input[type=range]").forEach(r => r.oninput = () => { const k = r.dataset.k; Settings.set(k, +r.value); const o = $("#v-" + k); o.textContent = { fov: v => v + "°", camDist: v => v + " m", sens: v => (+v).toFixed(1) + "×", volume: v => Math.round(v * 100) + " %" }[k](+r.value); });
     on(el, {
       mhStart: async () => { await MultiHost.call("POST"); MultiHost.bind(el); }, mhStop: async () => { await MultiHost.call("DELETE"); MultiHost.bind(el); }, mhCopy: () => MultiHost.copy(),
+      mhKey: () => { const i = el.querySelector("#mh-key"); MultiHost.key = (i && i.value || "").trim(); MultiHost.call("GET").then(() => MultiHost.bind(el)); },
       safe: () => { Settings.setSafe(!Settings.safe()); location.reload(); }, quality: d => { Settings.set("quality", d.q); re(); }, tog: d => { Settings.set(d.k, !Settings.get(d.k)); re(); },
       rsRes: () => confirmBox("Réinitialiser la recherche ?", "Les véhicules recherchés, l'XP disponible et la progression de campagne seront effacés. Les statistiques sont conservées.", "Réinitialiser", () => { Store.resetResearch(); refreshAll(); re(); }, true),
       rsAll: () => confirmBox("Effacer tout le profil ?", "Recherche, statistiques, historique et jalons seront définitivement supprimés.", "Tout effacer", () => { Store.resetAll(); refreshAll(); re(); }, true),

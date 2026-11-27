@@ -9,6 +9,10 @@
      refuse l'écrasement et le lobby propose de choisir (jamais de perte silencieuse).
    • Sans compte : exportation / importation d'un fichier de sauvegarde.
    ========================================================================== */
+/* Texte affichable : on supprime purement les caractères de balisage afin que la valeur reste
+   utilisable comme clé (MODE_NAME[mode], MAP_THEME_LABELS[map]) sans jamais devenir du HTML. */
+const plainText = (v, n) => String(v == null ? "" : v).replace(/[&<>"']/g, "").slice(0, n);
+
 const Account = (function () {
   "use strict";
   const L = localStorage;
@@ -34,7 +38,78 @@ const Account = (function () {
   Storage.prototype.removeItem = function (k) { const had = this === L && L.getItem(k) !== null; rawRm.call(this, k); if (had) mark(k); };
   const set = (k, v) => rawSet.call(L, k, v), rm = k => rawRm.call(L, k);
 
-  const collect = () => { const d = {}; for (let i = 0; i < L.length; i++) { const k = L.key(i); if (PROG.test(k)) d[k] = L.getItem(k); } return d; };
+  /* Validation à la frontière fichier serveur ↔ DOM : une sauvegarde forgée ne doit jamais
+     pouvoir injecter du HTML. Les structures complexes sont normalisées, pas seulement typées. */
+  function sanitizeValue(k, v) {
+    if (typeof v !== "string") return null;
+    if (k === "match_history") {
+      try {
+        const a = JSON.parse(v); if (!Array.isArray(a)) return "[]";
+        return JSON.stringify(a.slice(-30).filter(h => h && typeof h === "object").map(h => ({
+          mode: plainText(h.mode, 40),
+          map: plainText(h.map, 40),
+          tank: plainText(h.tank, 60),
+          result: plainText(h.result, 20),
+          score: plainText(h.score, 40),
+          kills: Number.isFinite(+h.kills) ? +h.kills : 0,
+          xp: Number.isFinite(+h.xp) ? +h.xp : 0
+        })));
+      } catch (e) { return "[]"; }
+    }
+    if (k === "customTankDesigns") {
+      try {
+        const o = JSON.parse(v), out = {};
+        if (!o || typeof o !== "object" || Array.isArray(o)) return "{}";
+        // Copie structurée : on garde base/paint/tp/gp/meta/parts (sinon l'Atelier perd ses chars),
+        // mais aucun texte importé ne survit avec des caractères de balisage.
+        const cleanObj = (x, depth) => {
+          if (x == null) return null;
+          if (typeof x === "number") return Number.isFinite(x) ? x : 0;
+          if (typeof x === "boolean") return x;
+          if (typeof x === "string") return plainText(x, 500);
+          if (depth > 5) return null;
+          if (Array.isArray(x)) return x.slice(0, 300).map(y => cleanObj(y, depth + 1));
+          if (typeof x !== "object") return null;
+          const c = {}; let n = 0;
+          for (const key of Object.keys(x)) { if (n++ > 60 || key.length > 60) continue; c[plainText(key, 60)] = cleanObj(x[key], depth + 1); }
+          return c;
+        };
+        const pair = (x, fallback) => Array.isArray(x) && x.length >= 2 && x.slice(0, 2).every(y => Number.isFinite(+y)) ? [+x[0], +x[1]] : fallback;
+        let bytes = 2;
+        for (const id of Object.keys(o).slice(0, 200)) {
+          if (!/^[A-Za-z0-9_-]{1,40}$/.test(id) || !o[id] || typeof o[id] !== "object" || !Array.isArray(o[id].parts)) continue;
+          const d = o[id];
+          const design = {
+            v: 1, id,
+            name: plainText(d.name, 60) || "Char",
+            base: /^[A-Za-z0-9_-]{1,40}$/i.test(String(d.base || "")) ? d.base : null,
+            paint: cleanObj(d.paint || {}, 0),
+            tp: pair(d.tp, [0, 2]), gp: pair(d.gp, [0, 0]),
+            meta: cleanObj(d.meta || {}, 0),
+            parts: d.parts.slice(0, 300).map(p => cleanObj(p, 0)).filter(Boolean),
+            updated: Number.isFinite(+d.updated) ? +d.updated : 0
+          };
+          // Les pièces doivent rester dans un type connu, sinon l'éditeur peut tenter un rendu arbitraire.
+          design.parts.forEach(p => { if (!/^[a-z0-9_-]{1,30}$/i.test(String(p.type || ""))) p.type = "box"; if (!["hull", "turret", "gun"].includes(p.grp)) p.grp = "hull"; });
+          const s = JSON.stringify(design);
+          if (bytes + s.length > 360000) break;
+          bytes += s.length + 1; out[id] = design;
+        }
+        return JSON.stringify(out);
+      } catch (e) { return "{}"; }
+    }
+    if (k === "customTankActive") {
+      try {
+        const o = JSON.parse(v), out = {};
+        if (!o || typeof o !== "object" || Array.isArray(o)) return "{}";
+        for (const key of Object.keys(o).slice(0, 60)) if (/^[A-Za-z0-9_-]{1,40}$/.test(String(o[key] || ""))) out[key.slice(0, 60)] = o[key];
+        return JSON.stringify(out);
+      } catch (e) { return "{}"; }
+    }
+    return v.slice(0, 380000);
+  }
+  A.sanitizeValue = sanitizeValue;   // utilisé aussi par l'Atelier pour les fichiers .tankdesign.json
+  const collect = () => { const d = {}; for (let i = 0; i < L.length; i++) { const k = L.key(i); if (PROG.test(k)) { const v = sanitizeValue(k, L.getItem(k)); if (v !== null) d[k] = v; } } return d; };
   const metaOf = d => ({ xp: parseInt(d.XP) || 0, xpe: Math.max(parseInt(d.XPEarned) || 0, parseInt(d.XP) || 0), res: Object.keys(d).filter(k => k.startsWith("researched_")).length, tank: d.SelectedTank || "" });
   A.localMeta = () => { const d = collect(); const m = metaOf(d); m.has = m.xpe > 0 || m.res > 0 || Object.keys(d).some(k => k.startsWith("stat_")); m.bytes = JSON.stringify(d).length; return m; };
   A.isDirty = () => L.getItem(K.dirty) === "1";
@@ -102,13 +177,23 @@ const Account = (function () {
   A.pull = async function () {
     const j = await api("GET", "/api/save"); if (!j.data) return null;
     applying = true;
-    try { for (const k of Object.keys(collect())) rm(k); for (const k of Object.keys(j.data)) if (PROG.test(k)) set(k, j.data[k]); set(K.synced, String(j.t)); set(K.dirty, "0"); set(K.owner, A.name().toLowerCase()); }
+    try { for (const k of Object.keys(collect())) rm(k); for (const k of Object.keys(j.data)) { if (!PROG.test(k)) continue; const v = sanitizeValue(k, j.data[k]); if (v !== null) set(k, v); } set(K.synced, String(j.t)); set(K.dirty, "0"); set(K.owner, A.name().toLowerCase()); }
     finally { applying = false; }
     A.state = "idle"; A.pending = null; return j;
   };
-  window.addEventListener("pagehide", () => {                      // dernière chance à la fermeture / au changement de page
+  /* Sauvegarde dès que l'onglet passe en arrière-plan (requête normale, sans limite keepalive). */
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && A.loggedIn() && A.isDirty()) A.push().catch(() => { });
+  });
+  /* Dernier recours à la fermeture : fetch keepalive (limite navigateur ~60 Ko). Si la
+     sauvegarde est plus grosse, on laisse un avertissement visible au prochain chargement. */
+  A.saveWarning = () => L.getItem("TaSaveWarn") || "";
+  A.clearSaveWarning = () => rm("TaSaveWarn");
+  window.addEventListener("pagehide", () => {
     if (!A.loggedIn() || !A.isDirty()) return; const data = collect(), body = JSON.stringify({ data, base: A.lastSync() });
-    if (body.length < 60000) try { fetch("/api/save", { method: "PUT", keepalive: true, headers: Object.assign({ "Content-Type": "application/json" }, A.headers()), body }); } catch (e) { }
+    if (body.length >= 60000) { rawSet.call(L, "TaSaveWarn", "Sauvegarde trop volumineuse pour un envoi à la fermeture : elle sera envoyée au prochain changement d'onglet."); return; }
+    rm("TaSaveWarn");
+    try { fetch("/api/save", { method: "PUT", keepalive: true, headers: Object.assign({ "Content-Type": "application/json" }, A.headers()), body }); } catch (e) { }
   });
 
   /* ───── Sauvegarde manuelle par fichier (avec ou sans compte) ───── */
@@ -120,8 +205,11 @@ const Account = (function () {
     return new Promise((resolve, reject) => {
       const r = new FileReader(); r.onerror = () => reject(new Error("Lecture impossible")); r.onload = () => {
         try {
-          const j = JSON.parse(r.result); if (!j || typeof j.data !== "object") throw 0;
-          applying = true; try { for (const k of Object.keys(collect())) rm(k); for (const k of Object.keys(j.data)) if (PROG.test(k) && typeof j.data[k] === "string") set(k, j.data[k]); } finally { applying = false; }
+          const j = JSON.parse(r.result); if (!j || typeof j.data !== "object" || Array.isArray(j.data)) throw 0;
+          applying = true; try {
+            for (const k of Object.keys(collect())) rm(k);
+            for (const k of Object.keys(j.data)) { if (!PROG.test(k)) continue; const v = sanitizeValue(k, j.data[k]); if (v !== null) set(k, v); }
+          } finally { applying = false; }
           if (A.loggedIn()) { set(K.dirty, "1"); } resolve(metaOf(j.data));
         } catch (e) { reject(new Error("Fichier de sauvegarde invalide.")); }
       }; r.readAsText(file);
