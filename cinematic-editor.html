@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Tank Arena — Éditeur de cinématiques</title>
+<link rel="stylesheet" href="css/cinematic-editor.css">
+</head>
+<body>
+<header class="top">
+  <a href="lobby.html#atelier">← QG</a><strong>TANK ARENA <span> / ÉDITEUR DE CINÉMATIQUES</span></strong>
+  <input id="sceneName" value="Nouvelle cinématique" aria-label="Nom de la cinématique">
+  <button id="newScene">Nouveau</button><button id="saveScene">Sauvegarder</button><button id="openScene">Ouvrir sauvegarde</button><button id="exportScene" class="accent">Exporter JSON</button><button id="importScene">Importer</button><input id="importFile" type="file" accept=".json,application/json" hidden>
+</header>
+<main class="layout">
+ <aside class="panel left">
+  <nav class="tabs"><button class="tab active" data-tab="terrain">Terrain</button><button class="tab" data-tab="units">Chars</button><button class="tab" data-tab="camera">Caméra</button><button class="tab" data-tab="scene">Scène</button></nav>
+  <section class="tabpage active" id="tab-terrain">
+   <h3>SCULPTER LE TERRAIN</h3><label>Outil<select id="terrainTool"><option value="raise">Élever</option><option value="lower">Creuser</option><option value="smooth">Lisser</option><option value="flatten">Aplanir</option><option value="paint">Peindre le sol</option></select></label>
+   <label>Rayon <output id="radiusOut">12 m</output><input id="brushRadius" type="range" min="2" max="45" value="12"></label>
+   <label>Intensité <output id="strengthOut">2.0 m</output><input id="brushStrength" type="range" min="0.2" max="8" step="0.1" value="2"></label>
+   <label>Type de sol<select id="groundType"><option value="grass">Herbe</option><option value="dirt">Terre</option><option value="mud">Boue</option><option value="sand">Sable</option><option value="rock">Roche</option></select></label>
+   <div class="buttons"><button id="addRoad">Ajouter route</button><button id="addWater">Ajouter eau</button><button id="addWall">Ajouter obstacle</button></div>
+   <p class="hint">Glisser sur le terrain pour sculpter. En mode sélection, déplacer les éléments avec la souris ou le doigt.</p>
+  </section>
+  <section class="tabpage" id="tab-units">
+   <h3>UNITÉS BLINDÉES</h3><label>Véhicule<select id="tankType"></select></label>
+   <div class="buttons"><button id="placeTank" class="accent">Placer un char</button><button id="duplicateTank">Dupliquer sélection</button></div>
+   <h3>ORDRES DU CHAR SÉLECTIONNÉ</h3><div id="unitInfo" class="empty">Sélectionne un char dans la scène.</div>
+   <label>Ordre<select id="orderType"><option value="move">Avancer vers un point</option><option value="reverse">Reculer</option><option value="turn">Tourner sur place</option><option value="turret">Orienter la tourelle</option><option value="fire">Tirer</option><option value="wait">Attendre</option><option value="follow">Suivre une unité</option></select></label>
+   <label>Durée (s)<input id="orderDuration" type="number" min="0.1" step="0.1" value="3"></label>
+   <button id="addOrder" class="accent full">Ajouter l'ordre (cible = position du char)</button>
+   <div id="ordersList" class="list"></div>
+  </section>
+  <section class="tabpage" id="tab-camera">
+   <h3>TRAJECTOIRE CAMÉRA</h3><p class="hint">Place la caméra dans la vue 3D, oriente-la, puis ajoute une clé à la timeline.</p>
+   <label>Vitesse de transition<select id="cameraEase"><option value="smooth">Douce (ease in/out)</option><option value="linear">Linéaire</option><option value="cut">Coupe franche</option></select></label>
+   <label>Durée depuis la clé précédente (s)<input id="cameraDuration" type="number" min="0.1" step="0.1" value="3"></label>
+   <button id="addCameraKey" class="accent full">Ajouter une clé caméra</button>
+   <button id="cameraToView" class="full">Placer la caméra sur la vue actuelle</button>
+   <div id="cameraKeys" class="list"></div>
+  </section>
+  <section class="tabpage" id="tab-scene">
+   <h3>PROPRIÉTÉS DE LA SCÈNE</h3>
+   <label>Dimensions <select id="terrainSize"><option value="120">120 × 120 m</option><option value="200" selected>200 × 200 m</option><option value="300">300 × 300 m</option></select></label>
+   <label>Grille <select id="gridSize"><option value="2">2 m</option><option value="5" selected>5 m</option><option value="10">10 m</option></select></label>
+   <div class="buttons"><button id="toggleGrid">Afficher/masquer grille</button><button id="deleteSelected" class="danger">Supprimer sélection</button></div>
+   <h3>OBJETS DE LA SCÈNE</h3><div id="objectList" class="list"></div>
+  </section>
+ </aside>
+ <section class="viewport" id="viewport"><div class="viewbar"><span id="modeLabel">SCULPTURE TERRAIN</span><button id="selectMode" class="active">Sélection</button><button id="sculptMode">Sculpture</button><button id="focusSelected">Cadrer sélection</button><button id="resetView">Vue initiale</button></div><div id="loading">Initialisation de la scène 3D…</div></section>
+ <aside class="panel right">
+  <h3>INSPECTEUR</h3><div id="inspector" class="empty">Aucun élément sélectionné.</div>
+  <h3>LECTURE CINÉMATIQUE</h3>
+  <div class="transport"><button id="play">▶ Lecture</button><button id="pause">Ⅱ</button><button id="stop">■</button></div>
+  <label>Temps <output id="timeOut">00:00.0</output><input id="timeScrub" type="range" min="0" max="30" step="0.1" value="0"></label>
+  <label>Durée totale (s)<input id="totalDuration" type="number" min="1" max="600" step="1" value="30"></label>
+  <h3>PISTES / TIMELINE</h3><div id="timeline" class="timeline"></div>
+  <div class="buttons"><button id="addMarker">Marqueur</button><button id="deleteKey" class="danger">Supprimer clé</button></div>
+  <p class="hint">Les projets sont sauvegardés dans le navigateur. L'export JSON permet de les transférer.</p>
+ </aside>
+</main>
+<script src="js/vendor/three.min.js"></script>
+<script src="js/model-loaders.js"></script>
+<script src="models/models.js"></script>
+<script src="js/shared-data.js"></script>
+<script src="js/tank-catalog.js"></script>
+<script src="js/cinematic-editor.js"></script>
+</body></html>

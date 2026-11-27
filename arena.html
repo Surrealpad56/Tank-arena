@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <script>/* diagnostic : signale un fichier du jeu qui n'a pas pu être chargé */
+    (function () { var miss = [];
+      addEventListener("error", function (e) { var t = e.target; if (!t || (t.tagName !== "SCRIPT" && t.tagName !== "LINK")) return; miss.push((t.src || t.href || "").split("/").slice(3).join("/")); if (miss.length === 1) setTimeout(show, 600); }, true);
+      function show() { var d = document.createElement("div"); d.style.cssText = "position:fixed;z-index:99999;left:0;right:0;top:0;background:#b3261e;color:#fff;padding:12px 16px;font:15px/1.4 sans-serif";
+        d.innerHTML = "<b>Le jeu n'a pas pu charger " + miss.length + " fichier(s)</b> : " + miss.slice(0, 4).join(", ") + (miss.length > 4 ? "…" : "") + ".<br>Les dossiers <b>js</b>, <b>css</b> et <b>models</b> doivent être présents à côté de server.js (sur GitHub, ils doivent apparaître dans la liste des fichiers). Détail : <a style='color:#fff' href='/api/health'>/api/health</a>";
+        (document.body || document.documentElement).appendChild(d); } })();
+  </script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tank Arena — Combat</title>
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/arena.css">
+</head>
+<body>
+  <canvas id="Game"></canvas>
+
+  <!-- ───────── HUD ───────── -->
+  <div id="hud" class="hidden">
+    <div id="vignette"></div>
+    <div id="hit-ring"></div>
+
+    <!-- Haut : score et boussole -->
+    <div id="top">
+      <div id="score" class="cut">
+        <div class="team a"><span class="tl disp">Alliés</span><b id="sc-a" class="num">0</b></div>
+        <div id="sc-mid"><span id="sc-mode" class="disp">—</span><span id="sc-obj" class="num">—</span></div>
+        <div class="team b"><b id="sc-b" class="num">0</b><span class="tl disp">Ennemis</span></div>
+      </div>
+      <canvas id="compass" width="520" height="34"></canvas>
+    </div>
+
+    <!-- Minicarte -->
+    <div id="mini" class="cut">
+      <canvas id="minimap" width="240" height="252"></canvas>
+      <div id="mini-cap" class="disp"><span id="mini-theme">—</span><span id="fps" class="num hidden"></span></div>
+    </div>
+
+    <!-- Journal d'événements -->
+    <div id="feed"></div>
+
+    <!-- Viseur -->
+    <div id="reticle">
+      <div id="aim" class="neutral"><i></i><i></i><i></i><i></i></div>
+      <div id="range" class="num disp"></div>
+      <div id="penetration" class="penetration hidden"></div>
+      <div id="target-info"></div>
+    </div>
+    <div id="scope" class="hidden">
+      <div id="scope-lens"></div>
+      <svg id="scope-ret" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="scope-info">
+        <div><span>Distance</span><b id="sc-dist">—</b></div>
+        <div><span>Élévation</span><b id="sc-el">0.0°</b></div>
+        <div><span>Munition</span><b id="sc-ammo">—</b></div>
+        <div><span>Zoom</span><b id="sc-zoom">×1</b></div>
+      </div>
+    </div>
+    <div id="gun-mark"><i></i><b></b></div>
+
+    <!-- Marqueurs de chars -->
+    <div id="markers"></div>
+
+    <!-- Véhicule -->
+    <div id="veh" class="cut">
+      <div id="veh-head">
+        <span id="veh-name" class="disp">—</span>
+        <span id="veh-cat" class="disp">—</span>
+      </div>
+      <div id="veh-body">
+        <canvas id="orient" width="120" height="120"></canvas>
+        <div id="veh-stats">
+          <div class="spd"><b id="spd" class="num">0</b><span>km/h</span></div>
+          <div class="gear disp">Rapport <b id="gear" class="num">N</b></div>
+          <div id="eng-bar"><i id="eng-fill"></i></div>
+          <div id="mods">
+            <span id="m-engine" title="Moteur">MOT</span>
+            <span id="m-canon" title="Canon">CAN</span>
+            <span id="m-trackL" title="Chenille gauche">CHG</span>
+            <span id="m-trackR" title="Chenille droite">CHD</span>
+          </div>
+          <div id="crew" title="Équipage"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- État des modules (vue de dessus) -->
+    <div id="dmg" class="cut">
+      <div class="dh disp"><span>Modules</span><span id="dmg-sum" class="num"></span></div>
+      <div class="db"><canvas id="dmg-cv" width="150" height="150"></canvas><div id="dmg-chips"></div></div>
+    </div>
+
+    <!-- Rapport du dernier impact -->
+    <div id="rep" class="cut hidden">
+      <div class="dh disp"><span id="rep-title">—</span><span id="rep-sub" class="num"></span></div>
+      <div class="db"><canvas id="rep-cv" width="150" height="150"></canvas><ul id="rep-list"></ul></div>
+    </div>
+
+    <!-- Munitions -->
+    <div id="ammo">
+      <div class="slot" id="slot1"><kbd>1</kbd><div class="an disp" id="an1">—</div><div class="ap num" id="ap1">—</div></div>
+      <div class="slot" id="slot2"><kbd>2</kbd><div class="an disp" id="an2">—</div><div class="ap num" id="ap2">—</div></div>
+      <div id="reload"><i id="reload-fill"></i><span id="reload-txt" class="disp num">PRÊT</span></div>
+    </div>
+
+    <!-- Aide rapide -->
+    <div id="respawn" class="hidden"><div class="disp rt">Véhicule détruit</div><div id="respawn-txt" class="num"></div></div>
+    <div id="toast" class="hidden"></div>
+  </div>
+
+  <!-- ───────── Commandes tactiles ───────── -->
+  <div id="touch" class="hidden">
+    <div id="joy"><i></i></div>
+    <div id="t-reload" aria-live="polite"><span id="t-reload-label">CANON</span><div><i id="t-reload-fill"></i></div></div>
+    <button id="t-fire" class="disp">TIR</button>
+    <button id="t-snipe" class="disp">VISÉE</button>
+    <button id="t-repair" class="disp" disabled aria-disabled="true" title="Réparation disponible à l’arrêt">RÉPARER</button>
+    <button id="t-ammo" class="disp">OBUS</button>
+    <button id="t-pause" class="disp">Ⅱ</button>
+  </div>
+
+  <!-- ───────── Écrans ───────── -->
+  <div id="loading" class="screen">
+    <div class="ld-card cut">
+      <div class="ld-tag disp">Déploiement</div>
+      <h1 class="disp" id="ld-title">Chargement de la zone…</h1>
+      <div id="ld-sub" class="ld-sub"></div>
+      <div class="ld-bar"><i id="ld-fill"></i></div>
+      <div id="ld-step" class="num">0 %</div>
+    </div>
+  </div>
+
+  <div id="pause" class="screen hidden">
+    <div class="pa-card cut">
+      <div class="ld-tag disp">Pause</div>
+      <h2 class="disp">Commandes</h2>
+      <div class="keys" id="keys-grid"></div>
+      <div class="pa-btns">
+        <button class="btn primary disp" id="b-resume">Reprendre</button>
+        <button class="btn disp" id="b-quit">Retour au QG</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wait" class="screen hidden">
+    <div class="pa-card cut">
+      <div class="ld-tag disp">Mode en ligne</div>
+      <h2 class="disp" id="wait-title">Connexion</h2>
+      <div id="wait-body"></div>
+      <div class="pa-btns"><button class="btn disp" id="b-wait-quit">Annuler</button></div>
+    </div>
+  </div>
+
+  <div id="end" class="screen hidden"></div>
+
+
+  <script src="js/account.js"></script>
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/shared-data.js"></script>
+  <script src="js/tank-catalog.js"></script>
+  <script src="js/roster-wt.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/map-engine.js"></script>
+  <script src="js/map-defs.js"></script>
+  <script src="js/terrain-gen.js"></script>
+  <script src="js/model-loaders.js"></script>
+  <script src="models/models.js"></script>
+  <script src="js/tank-designs.js"></script>
+  <script src="js/tank-models.js"></script>
+  <script src="js/arena-constants.js"></script>
+  <script src="js/arena-look.js"></script>
+  <script src="js/arena-weather.js"></script>
+  <script src="js/arena-post.js"></script>
+  <script src="js/arena-terrain.js"></script>
+  <script src="js/arena-world.js"></script>
+  <script src="js/arena-fx.js"></script>
+  <script src="js/arena-damage.js"></script>
+  <script src="js/arena-hud.js"></script>
+  <script src="js/arena-entities.js"></script>
+  <script src="js/arena-camera.js"></script>
+  <script src="js/arena-combat.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/arena-controls.js"></script>
+  <script src="js/arena-main.js"></script>
+</body>
+</html>
