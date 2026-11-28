@@ -28,7 +28,7 @@ kbd { font: 600 11px var(--font-display); letter-spacing: .05em; padding: 1px 6p
 #mini-cap { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); padding-top: 4px; }
 
 /* Journal */
-#feed { left: 14px; top: 90px; width: 360px; display: flex; flex-direction: column; gap: 3px; }
+#feed { left: 14px; top: 214px; width: 360px; display: flex; flex-direction: column; gap: 3px; }
 .fe { padding: 4px 10px; font-size: 13px; background: linear-gradient(90deg, rgba(10,14,17,.82), rgba(10,14,17,0)); border-left: 3px solid var(--dim); animation: fin .18s ease-out; transition: opacity .6s; }
 .fe.old { opacity: 0; }
 .fe.pen { border-color: var(--bad); } .fe.blk { border-color: var(--dim); } .fe.ric { border-color: #7ec8ff; }
@@ -331,3 +331,45 @@ body.sniper #dmg, body.sniper #veh { opacity: .38; transition: opacity .2s; }
 body.sniper #target-info { top: calc(50% - var(--lens, 37vmin) * .55); }
 body.sniper #penetration { top: calc(50% - var(--lens, 37vmin) * .55 - 22px); }
 @media (max-width: 700px) { #scope-info { gap: 8px; padding: 4px 8px; } #scope-info b { font-size: 13px; } #scope-info div { min-width: 44px; } }
+
+/* Schéma du dernier ennemi touché : petit, haut gauche */
+#foe { left: 14px; top: 10px; width: 272px; background: var(--panel); border: 1px solid var(--line-strong); padding: 0; }
+#foe.hidden { display: none; }
+#foe-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 13px; letter-spacing: .04em; }
+#foe-name { color: var(--foe, #ff5a44); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#foe-crew { color: var(--dim); font-size: 12px; white-space: nowrap; }
+#foe-cv { display: block; width: 260px; height: 150px; margin: 3px; background: rgba(0,0,0,.3); }
+#foe.dead #foe-name::after { content: " · DÉTRUIT"; color: #ff4444; }
+body.touch #foe { transform: scale(.6); transform-origin: left top; left: 4px; top: 4px; }
+body.touch #feed { top: 120px; }
+
+
+/* Marqueur de réparation — indépendant du feed */
+#repair-mark {
+  left: 50%; bottom: 110px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px 8px 10px;
+  background: rgba(10, 14, 17, 0.88);
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--ok);
+  pointer-events: none;
+  min-width: 180px;
+  z-index: 6;
+}
+#repair-mark.hidden { display: none; }
+.rm-ring {
+  width: 40px; height: 40px; flex: none;
+  border-radius: 50%;
+  background: conic-gradient(var(--ok) calc(var(--rm-p, 0) * 1%), rgba(255,255,255,.12) 0);
+  position: relative;
+}
+.rm-ring::after {
+  content: ""; position: absolute; inset: 5px;
+  border-radius: 50%; background: rgba(10,14,17,.95);
+}
+.rm-ring i { display: none; }
+.rm-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#rm-time { font: 700 18px/1.1 var(--font-display); color: var(--ok); letter-spacing: .04em; }
+#rm-mod { font-size: 12px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+body.touch #repair-mark { bottom: 160px; transform: translateX(-50%) scale(.9); }
+body.sniper #repair-mark { opacity: .55; }
