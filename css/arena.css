@@ -76,7 +76,7 @@ kbd { font: 600 11px var(--font-display); letter-spacing: .05em; padding: 1px 6p
 .mk small { font: 500 11px var(--font-ui); opacity: .85; margin-left: 4px; }
 
 /* Véhicule */
-#veh { left: 14px; bottom: 14px; width: 360px; background: var(--panel); border: 1px solid var(--line); }
+#veh { left: 14px; bottom: 14px; width: 280px; background: var(--panel); border: 1px solid var(--line); }
 #veh-head { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 12px; border-bottom: 1px solid var(--line); }
 #veh-name { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; } #veh-cat { font-size: 12px; color: var(--amber); }
 #veh-body { display: flex; gap: 8px; padding: 8px 10px 10px; }
@@ -172,22 +172,56 @@ body.touch #feed { top: 60px; width: 240px; }
 .mk.sil i { border-width: 6px; margin-top: 0; }
 
 /* Modules et rapport d'impact */
+/* ───── Panneaux dégâts (votre char / tirs infligés) ───── */
 #dmg, #rep { background: var(--panel); border: 1px solid var(--line); }
-#dmg { left: 14px; bottom: 190px; width: 360px; }
-#rep { right: 14px; top: 272px; width: 350px; border-color: var(--line-strong); }
-.dh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 12px; border-bottom: 1px solid var(--line); font-size: 14px; letter-spacing: .1em; color: var(--dim); }
+#dmg { left: 14px; bottom: 14px; width: 360px; }
+#rep { right: 14px; bottom: 14px; width: 360px; border-color: var(--line-strong); }
+.dh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 13px; letter-spacing: .1em; color: var(--dim); }
 #rep-title { color: var(--amber); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } #rep-sub { font-size: 12px; color: var(--text); text-align: right; }
-.db { display: flex; gap: 8px; padding: 8px 10px 10px; align-items: flex-start; }
-.db canvas { width: 150px; height: 150px; flex: none; background: rgba(0,0,0,.25); border: 1px solid var(--line); }
-#dmg-chips { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; flex: 1; }
-.chip { font: 600 12px var(--font-display); letter-spacing: .06em; text-transform: uppercase; padding: 3px 7px; border: 1px solid var(--line); color: var(--ok); background: rgba(95,211,138,.08); }
-.chip.dmg { color: var(--warn); border-color: rgba(255,176,0,.5); background: rgba(255,176,0,.1); } .chip.dead { color: var(--bad); border-color: rgba(255,90,68,.6); background: rgba(255,90,68,.14); } .chip.fire { color: #ff7a30; border-color: #ff7a30; animation: blink .8s infinite; }
+.db { display: flex; gap: 10px; padding: 10px; align-items: flex-start; }
+.db canvas { width: 170px; height: 170px; flex: none; background: rgba(0,0,0,.3); border: 1px solid var(--line); }
+.db > div { flex: 1; min-width: 0; }
+
+/* État du char (en-tête #dmg) */
+.state { font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.state.ok { color: var(--ok); } .state.dmg { color: var(--warn); } .state.dead { color: var(--bad); }
+.state.crit { color: #ff7a30; font-weight: 800; }
+#dmg-status { font-size: 15px; font-weight: 700; color: var(--text); }
+
+/* Incendie */
+.dmg-fire { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; font: 700 13px var(--font-display); letter-spacing: .1em; text-transform: uppercase; color: #ff7a30; background: rgba(0,0,0,.75); border: 1px solid #ff7a30; padding: 2px 10px; border-radius: 10px; animation: blink .8s infinite; pointer-events: none; }
+
+/* Barres de vie compactes dans le panneau Véhicule */
+.veh-bars { margin-top: 8px; font-size: 11px; }
+.veh-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; border-bottom: 1px solid rgba(190,215,230,.06); }
+.veh-row.fire { color: #ff7a30; font-weight: 700; }
+.veh-lbl { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 52px; }
+.veh-bar { flex: 1; height: 7px; background: rgba(255,255,255,.06); border: 1px solid var(--line); overflow: hidden; position: relative; }
+.veh-fill { height: 100%; width: 100%; background: var(--ok); transition: width .15s, background .15s; }
+.veh-fill.dmg { background: var(--warn); } .veh-fill.dead { background: var(--bad); } .veh-fill.crit { background: #ff7a30; }
+
+/* Dégâts infligés aux ennemis : indicateur compact en haut, différencié des dégâts subis */
+#dmg-out { position: absolute; left: 50%; transform: translateX(-50%); top: 38px; z-index: 4; font: 700 11px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--ok); background: rgba(0,0,0,.65); border: 1px solid var(--line); padding: 2px 10px; border-radius: 10px; pointer-events: none; white-space: nowrap; }
+#dmg-out.hidden { display: none; }
+#dmg-out-label { color: #7fd37f; margin-right: 6px; }
+
+/* Dégâts infligés (#rep) */
+#rep-stats { font-size: 12px; color: var(--text); font-weight: 700; white-space: nowrap; }
+#rep-hits { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; max-height: 150px; overflow-y: auto; font-size: 12px; }
+#rep-hits li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid rgba(190,215,230,.06); }
+#rep-hits li .tgt { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#rep-hits li .res { font-weight: 700; min-width: 55px; text-align: right; }
+#rep-hits li .res.pen { color: var(--ok); } #rep-hits li .res.blocked { color: #88a0b8; } #rep-hits li .res.ricochet { color: #ffb000; } #rep-hits li .res.spall { color: #ff7a30; } #rep-hits li .res.dead { color: #ff4444; font-weight: 800; }
+#rep-hits li .ammo { font-size: 10px; color: var(--dim); margin-left: 6px; }
+
 @keyframes blink { 50% { opacity: .45; } }
-#rep-list { list-style: none; margin: 0; padding: 0; font-size: 13px; line-height: 1.35; flex: 1; min-width: 0; max-height: 190px; overflow: hidden; font-size: 12.5px; }
-#rep-list li { padding: 2px 0 2px 16px; position: relative; border-bottom: 1px solid rgba(190,215,230,.07); }
-#rep-list li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 8px; height: 8px; background: var(--dim); }
-#rep-list li.dead::before { background: var(--bad); } #rep-list li.dmg::before { background: var(--warn); } #rep-list li.ok::before { background: var(--ok); } #rep-list li.dead { color: var(--bad); } #rep-list li.dmg { color: var(--warn); } #rep-list li.note { color: var(--dim); }
-body.touch #dmg { transform: scale(.62); transform-origin: left bottom; left: 4px; bottom: 120px; } body.touch #rep { transform: scale(.62); transform-origin: right top; top: 150px; right: 4px; }
+
+body.touch #rep { transform: scale(.62); transform-origin: right bottom; right: 4px; bottom: 4px; }
+body.touch #rep .db { flex-direction: column; }
+body.touch #rep canvas { width: 140px; height: 140px; }
+
+/* Sniper : atténuer les panneaux */
+body.sniper #rep { opacity: .35; transition: opacity .2s; }
 
 
 /* Indicateur de recharge mobile ; commandes tactiles existantes conservées */
