@@ -395,14 +395,36 @@ const Dmg = (function () {
     if (alive <= 1) { tank._ev("killed"); tank._destroyTank(); }
   };
 
-  /* ───── Réparation (touche R à l'arrêt) : renvoie un texte ou null ───── */
-  D.repairStep = function (tank) {
-    const I = tank.int, order = ["trans", "engine", "breech", "ring"];
-    for (const id of order) {
-      const m = I.byId[id];
-      if (m.hp < 1) { m.hp = m.hp <= 0 ? 0.5 : Math.min(1, m.hp + 0.35); D.sync(tank); return m.label + (m.hp >= 1 ? " réparé" : " remis en état partiel"); }
+  /* ───── Réparation (appui unique sur R à l'arrêt) ─────
+     Temps par module (secondes). Le total = somme des modules endommagés. */
+  D.REPAIR_SEC = { trackL: 4, trackR: 4, trans: 5, engine: 6, breech: 5, ring: 4, _default: 4 };
+  D.listDamaged = function (tank) {
+    const jobs = [];
+    if (tank.modules && !tank.modules.trackLeft) jobs.push({ id: "trackL", label: "Chenille G", sec: D.REPAIR_SEC.trackL });
+    if (tank.modules && !tank.modules.trackRight) jobs.push({ id: "trackR", label: "Chenille D", sec: D.REPAIR_SEC.trackR });
+    const I = tank.int;
+    if (I && I.byId) {
+      for (const id of ["trans", "engine", "breech", "ring"]) {
+        const m = I.byId[id];
+        if (m && m.hp < 1) jobs.push({ id, label: m.label, sec: D.REPAIR_SEC[id] || D.REPAIR_SEC._default });
+      }
     }
-    return null;
+    return jobs;
+  };
+  D.finishRepairItem = function (tank, job) {
+    if (job.id === "trackL") tank.modules.trackLeft = true;
+    else if (job.id === "trackR") tank.modules.trackRight = true;
+    else if (tank.int && tank.int.byId[job.id]) {
+      tank.int.byId[job.id].hp = 1;
+      D.sync(tank);
+    }
+  };
+  /* Ancienne API (un pas partiel) — conservée si un autre appel en a besoin. */
+  D.repairStep = function (tank) {
+    const jobs = D.listDamaged(tank);
+    if (!jobs.length) return null;
+    D.finishRepairItem(tank, jobs[0]);
+    return jobs[0].label + " réparé";
   };
 
   /* ───── Traceurs 3D (trajectoire interne + éclats) ───── */
@@ -463,8 +485,16 @@ const Dmg = (function () {
   };
 
   /* ───── Schéma 2D (vue de dessus) : état des modules, impact, trajectoire ───── */
-  D.drawTank = function (ctx, w, h, tank, rep) {
+  D.drawTank = function (ctx, w, h, tank, rep, landscape) {
     ctx.clearRect(0, 0, w, h);
+    if (landscape) {
+      /* Vue en paysage : le schéma est tourné de 90° (le char regarde à droite) ; les textes restent droits. */
+      ctx.save(); ctx.translate(w / 2, h / 2); ctx.rotate(Math.PI / 2); ctx.translate(-h / 2, -w / 2);
+      const ft = ctx.fillText;
+      ctx.fillText = function (t, x, y) { this.save(); this.translate(x, y); this.rotate(-Math.PI / 2); ft.call(this, t, 0, 0); this.restore(); };
+      try { D.drawTank(ctx, h, w, tank, rep); } finally { delete ctx.fillText; ctx.restore(); }
+      return;
+    }
     const P = tank.profile, I = tank.int; if (!I) return;
     const s = Math.min((w - 10) / (P.W + 0.8), (h - 16) / (P.L + 0.8)), cx = w / 2, cy = h / 2;
     const X = (lz) => cx + lz * s, Y = (lx) => cy - lx * s;
@@ -488,7 +518,7 @@ const Dmg = (function () {
     const COL_LINE = "rgba(0,0,0,.85)";        // contour noir
 
     const moduleColor = (m) => {
-      if (m.hp <= 0) return { fill: COL_DEAD_FILL, stroke: COL_LINE, alpha: 1, lw: 2 };
+      if (m.hp <= 0) return { fill: COL_DEAD_FILL, stroke: COL_DEAD, alpha: 1, lw: 2.2 };
       if (m.hp < 0.999) return { fill: COL_DMG, stroke: COL_LINE, alpha: 0.85, lw: 1.5 };
       return { fill: COL_OK, stroke: "rgba(0,0,0,.35)", alpha: 0.85, lw: 1 };
     };
@@ -502,8 +532,7 @@ const Dmg = (function () {
           const px = (pt.c[2] - m.c[2]) * s, py = -(pt.c[0] - m.c[0]) * s, hw = Math.max(1.4, pt.h[2] * s), hl = Math.max(1.4, pt.h[0] * s);
           if (m.hp <= 0) {
             ctx.fillStyle = COL_DEAD_FILL; ctx.fillRect(px - hw, py - hl, hw * 2, hl * 2);
-            ctx.strokeStyle = COL_LINE; ctx.lineWidth = mc.lw; ctx.strokeRect(px - hw, py - hl, hw * 2, hl * 2);
-            ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.moveTo(px - hw, py - hl); ctx.lineTo(px + hw, py + hl); ctx.moveTo(px + hw, py - hl); ctx.lineTo(px - hw, py + hl); ctx.stroke();
+            ctx.strokeStyle = COL_DEAD; ctx.lineWidth = mc.lw; ctx.strokeRect(px - hw, py - hl, hw * 2, hl * 2);
           } else if (m.hp < 0.999) {
             ctx.fillStyle = COL_DMG; ctx.fillRect(px - hw, py - hl, hw * 2, hl * 2);
             ctx.strokeStyle = COL_LINE; ctx.lineWidth = mc.lw; ctx.strokeRect(px - hw, py - hl, hw * 2, hl * 2);
@@ -511,7 +540,7 @@ const Dmg = (function () {
             ctx.fillStyle = COL_OK; ctx.fillRect(px - hw, py - hl, hw * 2, hl * 2);
             ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 1; ctx.strokeRect(px - hw, py - hl, hw * 2, hl * 2);
           }
-          ctx.fillStyle = "#0b0f12"; ctx.font = "700 8px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(m.hp > 0 ? m.role[0].toUpperCase() : "✕", px, py);
+          ctx.fillStyle = m.hp > 0 ? "#0b0f12" : "#ff8f80"; ctx.font = "700 8px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(m.role[0].toUpperCase(), px, py);
         }
       } else if (shape === "cylinder") {
         const r = Math.max(3.2, (m.h[2] || 0.24) * s * 1.2);
@@ -524,9 +553,6 @@ const Dmg = (function () {
         const bw = m.h[2] * 2, bl = m.h[0] * 2;
         ctx.fillStyle = mc.fill; ctx.globalAlpha = mc.alpha; ctx.fillRect(-bw * s / 2, -bl * s / 2, bw * s, bl * s); ctx.globalAlpha = 1;
         ctx.strokeStyle = mc.stroke; ctx.lineWidth = mc.lw; ctx.strokeRect(-bw * s / 2, -bl * s / 2, bw * s, bl * s);
-        if (m.hp <= 0) {
-          ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.moveTo(-bw * s / 2, -bl * s / 2); ctx.lineTo(bw * s / 2, bl * s / 2); ctx.moveTo(bw * s / 2, -bl * s / 2); ctx.lineTo(-bw * s / 2, bl * s / 2); ctx.stroke();
-        }
       }
       ctx.restore();
     };

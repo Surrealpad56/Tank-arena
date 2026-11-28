@@ -78,6 +78,11 @@ function beginPlay() {
   HUD.showPause(true);
 }
 
+/* Une erreur dans un pas de simulation ne doit jamais figer la partie : le temps est consommé
+   avant le pas (sinon le même pas est rejoué en boucle à chaque image) et l'erreur est journalisée. */
+let _simErrs = 0;
+function reportSimError(e) { if (_simErrs++ < 5) console.error("[Arena] erreur de simulation :", e); }
+
 /* ───── Simulation (60 Hz) ───── */
 function simStep() {
   Rules.tick(STEP);
@@ -103,7 +108,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   let dt = (now - _last) / 1000; _last = now; if (dt > 0.25) dt = 0.25; if (dt <= 0) dt = 0.0001;
   const live = !Game.paused || Net.on;   // en multijoueur la partie ne s'arrête pas
-  if (live) { _acc += dt; let n = 0; while (_acc >= STEP && n < 5) { simStep(); _acc -= STEP; n++; } if (n === 5) _acc = 0; }
+  if (live) { _acc += dt; let n = 0; while (_acc >= STEP && n < 5) { _acc -= STEP; n++; try { simStep(); } catch (e) { reportSimError(e); } } if (n === 5) _acc = 0; }
   _time += dt;
   const a = live ? _acc / STEP : 1, fdt = live ? dt : 0;
   const S = World.S;

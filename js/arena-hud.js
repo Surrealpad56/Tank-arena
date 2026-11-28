@@ -14,7 +14,7 @@ const HUD = (function () {
   const KEYS = [
     ["Avancer / reculer", "W S · ↑ ↓"], ["Tourner la caisse", "A D · ← →"], ["Rapport −/+", "Q · E"], ["Frein", "Espace"],
     ["Orienter canon et caméra", "Souris"], ["Tirer", "Clic gauche"], ["Mode visée (lunette)", "Clic droit · V"], ["Distance de caméra", "Molette"],
-    ["Obus 1 / obus 2", "1 · 2"], ["Repérage actif", "T"], ["Réparer (à l'arrêt)", "R (maintenir)"], ["Carte agrandie", "M"],
+    ["Obus 1 / obus 2", "1 · 2"], ["Repérage actif", "T"], ["Réparer (à l'arrêt)", "R (appui)"], ["Carte agrandie", "M"],
     ["Pause / commandes", "Échap · H"], ...(ARENA_CFG.mode === "test" ? [["Réinitialiser l'essai", "K"]] : []), ["Verrouiller la souris", "Clic dans le jeu"]
   ];
 
@@ -57,7 +57,7 @@ const HUD = (function () {
     try {
       ["hud", "score", "sc-a", "sc-b", "sc-mode", "sc-obj", "compass", "minimap", "mini-theme", "fps", "feed", "aim", "gun-mark", "range", "penetration", "target-info", "scope", "sc-dist", "sc-el", "sc-ammo", "sc-zoom", "markers",
         "veh-name", "veh-cat", "orient", "spd", "gear", "eng-fill", "m-engine", "m-canon", "m-trackL", "m-trackR", "crew", "an1", "an2", "ap1", "ap2", "slot1", "slot2", "reload", "reload-fill",
-        "veh", "veh-body", "veh-view", "light-move", "light-fire", "light-reload", "light-turret", "light-fireout", "dmg-out", "dmg-out-val", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "rep-hits", "rep-stats", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
+        "veh", "veh-body", "veh-view", "light-move", "light-fire", "light-reload", "light-turret", "light-fireout", "dmg-out", "dmg-out-val", "foe", "foe-cv", "foe-name", "foe-crew", "repair-mark", "rm-time", "rm-mod", "rm-fill", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "rep-hits", "rep-stats", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
       { const d = Object.getOwnPropertyDescriptor(Node.prototype, "textContent");
         for (const k in el) { const e = el[k]; if (e && e.nodeType === 1) Object.defineProperty(e, "textContent", { configurable: true, get() { return d.get.call(this); }, set(v) { v = String(v); if (d.get.call(this) !== v) d.set.call(this, v); } }); } }
       el.cmp = el.compass ? el.compass.getContext("2d") : null; el.mm = el.minimap ? el.minimap.getContext("2d") : null; el.or = el.orient ? el.orient.getContext("2d") : null;
@@ -161,10 +161,7 @@ const HUD = (function () {
       dead: r.detonated || false
     });
     if (incomingHits.length > DMG_MAX_IN) incomingHits.pop();
-    if (r.outcome === "penetration" || r.outcome === "blocked" || r.outcome === "ricochet" || r.outcome === "spall") {
-      const bearing = typeof r.dir === "number" ? r.dir : 0;
-      hitArrow(bearing, false);
-    }
+    // La flèche de direction est déjà affichée par H.event() (avec le vrai relèvement).
     if (r.detonated) feed("pen", `<b>Détonation de la soute !</b>`);
     else if (r.fire) feed("pen", `<b>Incendie déclenché</b>`);
     refreshDamageUI();
@@ -186,9 +183,31 @@ const HUD = (function () {
       kill: isKill
     });
     if (outgoingHits.length > DMG_MAX_OUT) outgoingHits.pop();
+    foe = { tank: t, r, until: performance.now() + FOE_SHOW_MS };
+    drawFoe();
     refreshDamageUI();
     hitMarker();
   };
+
+  /* Schéma du dernier char ennemi touché (haut gauche) : modules, équipage, trajectoire de l'obus.
+     Il reste affiché quelques secondes après le dernier impact et se met à jour en direct. */
+  const FOE_SHOW_MS = 8000;
+  let foe = null;
+  function drawFoe() {
+    const box = el.foe; if (!box || !el["foe-cv"]) return;
+    if (!foe) { box.classList.add("hidden"); return; }
+    const t = foe.tank;
+    if (!t || !t.int || performance.now() > foe.until) { foe = null; box.classList.add("hidden"); return; }
+    box.classList.remove("hidden"); box.classList.toggle("dead", !!t.destroyed);
+    el["foe-name"].textContent = t._playerName || t._tankKey || "Ennemi";
+    let crew = "";
+    try { crew = "👤 " + Dmg.crewAlive(t) + "/" + Dmg.crewTotal(t); } catch (e) { }
+    el["foe-crew"].textContent = crew;
+    try {
+      const r = foe.r && Array.isArray(foe.r.segs) ? foe.r : null;
+      Dmg.drawTank(el["foe-cv"].getContext("2d"), 260, 150, t, r, true);
+    } catch (e) { console.error("[HUD] schéma de la cible :", e); foe = null; box.classList.add("hidden"); }
+  }
 
   /* Dessin de l'état du char sur le panneau Véhicule (vue de dessus + voyants fonctions) */
   function refreshDamageUI() {
@@ -252,8 +271,9 @@ const HUD = (function () {
 
   /* Rapport détaillé d'impact (popup latérale, 9 s) — conservé pour le dernier tir */
   H.report = function (r, dir) {
+    try {
     rep = { r, dir, until: performance.now() + 9000 };
-    el["rep-title"].textContent = dir === "out" ? "Votre tir" : "Tir reçu"; el["rep-sub"].textContent = r.tank._tankKey || "";
+    if (el["rep-title"]) el["rep-title"].textContent = dir === "out" ? "Votre tir" : "Tir reçu"; if (el["rep-sub"]) el["rep-sub"].textContent = r.tank._tankKey || "";
     const pen = r.outcome === "ricochet" ? "Ricochet" : r.outcome === "blocked" ? `Arrêté · ${r.pen} / ${r.eff} mm` : r.outcome === "spall" ? "Éclats" : `${r.shell} · ${r.pen} › ${r.eff} mm`;
     const li = (c, t) => `<li class="${c}">${esc(t)}</li>`;
     let h = `<li class="note" style="color:var(--text);font-weight:600">${esc(pen)}</li>` + li("note", r.zone + (r.outcome === "ricochet" ? " — l'obus rebondit" : r.outcome === "blocked" ? " — blindage non percé" : ""));
@@ -262,19 +282,34 @@ const HUD = (function () {
     if (r.outcome !== "ricochet" && r.outcome !== "blocked" && !(r.changes || []).length && !r.detonated) h += li("ok", "Aucun module touché");
     if (r.detonated) h += li("dead", "Détonation de la soute !");
     if (r.fire) h += li("dmg", "Incendie déclenché");
-    const rl = $("rep-list"); rl.innerHTML = h; rl.style.display = "block"; el.rep.classList.remove("hidden");
-    Dmg.drawTank($("rep-cv"), 170, 170, r.tank, r);
+    const rl = $("rep-list"); if (rl) { rl.innerHTML = h; rl.style.display = "block"; } el.rep.classList.remove("hidden");
+    try { Dmg.drawTank($("rep-cv").getContext("2d"), 170, 170, r.tank, r); } catch (e) { console.error("[HUD] schéma d'impact :", e); }
     refreshDamageUI();
+    } catch (e) { console.error("[HUD] rapport d'impact :", e); }
   };
 
   let dmgT = 0;
+  function updateRepairMark() {
+    const box = el["repair-mark"]; if (!box) return;
+    const t = localTank, job = t && t._repairJob;
+    if (!job) { box.classList.add("hidden"); return; }
+    box.classList.remove("hidden");
+    const leftTicks = Math.max(0, job.totalTicks - job.doneTicks);
+    const sec = Math.ceil(leftTicks / 60);
+    const p = job.totalTicks > 0 ? (job.doneTicks / job.totalTicks) * 100 : 0;
+    box.style.setProperty("--rm-p", p.toFixed(1));
+    if (el["rm-time"]) el["rm-time"].textContent = sec + " s";
+    const cur = job.jobs[job.jobIdx];
+    if (el["rm-mod"]) el["rm-mod"].textContent = cur ? cur.label : "Réparation";
+  }
+
   function drawDamage(dt) {
     dmgT += dt;
     if (dmgT > 0.05) {
       dmgT = 0;
-      refreshDamageUI();
+      refreshDamageUI(); drawFoe();
     }
-    if (rep && performance.now() > rep.until) { rep = null; el.rep.classList.add("hidden"); $("rep-list").style.display = "none"; }
+    if (rep && performance.now() > rep.until) { rep = null; const rl = $("rep-list"); if (rl) rl.style.display = "none"; }
   }
 
   /* ───── Minicarte ───── */
@@ -418,7 +453,7 @@ const HUD = (function () {
 
   /* Zones opaques du HUD : on évite que les étiquettes de chars se posent dessus.
      Les rectangles sont mis en cache (coût de getBoundingClientRect non négligeable par image). */
-  const BLOCKERS = ["score", "veh", "dmg", "rep", "feed", "dmg-out"];
+  const BLOCKERS = ["score", "veh", "dmg", "rep", "feed", "dmg-out", "foe"];
   let blockRects = [], blockT = 0;
   function refreshBlockers() {
     blockRects = BLOCKERS.map(id => el[id]).filter(Boolean).map(e => {
