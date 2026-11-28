@@ -80,17 +80,12 @@
       </div>
       <div id="veh-body" class="veh-body">
         <canvas id="veh-view" width="100" height="100"></canvas>
-        <div id="veh-stats">
-          <div class="spd"><b id="spd" class="num">0</b><span>km/h</span></div>
-          <div class="gear disp">Rapport <b id="gear" class="num">N</b></div>
-          <div id="eng-bar"><i id="eng-fill"></i></div>
-          <div id="mods">
-            <span id="m-engine" title="Moteur">MOT</span>
-            <span id="m-canon" title="Canon">CAN</span>
-            <span id="m-trackL" title="Chenille gauche">CHG</span>
-            <span id="m-trackR" title="Chenille droite">CHD</span>
-          </div>
-          <div id="crew" title="Équipage"></div>
+        <div id="veh-lights">
+          <div class="light" id="light-move" title="Avancer / Reculer"><div class="light-dot"></div><span class="light-label">AVANCER</span></div>
+          <div class="light" id="light-fire" title="Tirer"><div class="light-dot"></div><span class="light-label">TIRER</span></div>
+          <div class="light" id="light-reload" title="Recharger"><div class="light-dot"></div><span class="light-label">RECHARGER</span></div>
+          <div class="light" id="light-turret" title="Tourner la tourelle"><div class="light-dot"></div><span class="light-label">TOURELLE</span></div>
+          <div class="light" id="light-fireout" title="Incendie"><div class="light-dot"></div><span class="light-label">INCENDIE</span></div>
         </div>
       </div>
     </div>
@@ -192,7 +187,7 @@
   <script src="js/arena-world.js"></script>
   <script src="js/arena-fx.js"></script>
   <script src="js/arena-damage.js"></script>
-  <script src="js/arena-hud.js?t=2"></script>
+  <script src="js/arena-hud.js?v=20261128"></script>
   <script src="js/arena-entities.js"></script>
   <script src="js/arena-camera.js"></script>
   <script src="js/arena-combat.js"></script>

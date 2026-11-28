@@ -345,15 +345,24 @@ const Dmg = (function () {
     const I = tank.int; if (!I) return; const M = I.byId;
     for (const m of I.mods) if (m.kind === "crew") tank.modules.crew[m.role] = m.hp > 0;
     const driverOk = !M.driver || M.driver.hp > 0;
+
+    // — Tir : culasse détruite = plus de tir du tout
     tank.modules.canon = M.breech.hp > 0;
-    I.reloadMult = 1 + (1 - M.breech.hp) * 0.8;
+
+    // — Rechargement : chargeur détruit = plus de rechargement du tout
+    if (M.loader && M.loader.hp <= 0) I.reloadMult = 0;
+    else if (M.loader && M.loader.hp < 1) I.reloadMult = 1 + (1 - M.loader.hp) * 0.6;
+    else I.reloadMult = 1 + (1 - M.breech.hp) * 0.8;
+
+    // — Propulsion : moteur OU transmission détruit = plus d'avancement
     const eng = M.engine.hp, tr = M.trans.hp;
-    tank.engineHealth = tr <= 0 ? 0 : Math.round(100 * Math.min(eng, 0.3 + 0.7 * tr));
+    tank.engineHealth = (eng <= 0 || tr <= 0) ? 0 : Math.round(100 * Math.min(eng, 0.3 + 0.7 * tr));
     tank.modules.engine = driverOk && eng > 0 && tr > 0;
     if (!driverOk) tank.engineHealth = 0;
-    const ringMult = M.ring.hp <= 0 ? 0.2 : M.ring.hp < 1 ? 0.6 : 1;
-    tank.turretSpeedMult = (M.gunner.hp > 0 ? 1 : 0.15) * ringMult * (M.gunner.hp > 0 ? 0.65 + 0.35 * M.gunner.hp : 1);
-    if (M.loader && M.loader.hp > 0 && M.loader.hp < 1) I.reloadMult += (1 - M.loader.hp) * 0.6;   // chargeur blessé : rechargement plus lent
+
+    // — Tourelle : bague détruite = plus de rotation
+    const ringMult = M.ring.hp <= 0 ? 0 : M.ring.hp < 1 ? 0.3 : 1;
+    tank.turretSpeedMult = (M.gunner.hp > 0 ? 1 : 0) * ringMult * (M.gunner.hp > 0 ? 0.65 + 0.35 * M.gunner.hp : 1);
   };
   D.crewAlive = tank => tank.int.mods.filter(m => m.kind === "crew" && m.hp > 0).length;
   D.crewTotal = tank => tank.int.mods.filter(m => m.kind === "crew").length;

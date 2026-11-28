@@ -57,7 +57,7 @@ const HUD = (function () {
     try {
       ["hud", "score", "sc-a", "sc-b", "sc-mode", "sc-obj", "compass", "minimap", "mini-theme", "fps", "feed", "aim", "gun-mark", "range", "penetration", "target-info", "scope", "sc-dist", "sc-el", "sc-ammo", "sc-zoom", "markers",
         "veh-name", "veh-cat", "orient", "spd", "gear", "eng-fill", "m-engine", "m-canon", "m-trackL", "m-trackR", "crew", "an1", "an2", "ap1", "ap2", "slot1", "slot2", "reload", "reload-fill",
-        "veh", "veh-body", "veh-view", "dmg-out", "dmg-out-val", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "rep-hits", "rep-stats", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
+        "veh", "veh-body", "veh-view", "light-move", "light-fire", "light-reload", "light-turret", "light-fireout", "dmg-out", "dmg-out-val", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "rep-hits", "rep-stats", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
       { const d = Object.getOwnPropertyDescriptor(Node.prototype, "textContent");
         for (const k in el) { const e = el[k]; if (e && e.nodeType === 1) Object.defineProperty(e, "textContent", { configurable: true, get() { return d.get.call(this); }, set(v) { v = String(v); if (d.get.call(this) !== v) d.set.call(this, v); } }); } }
       el.cmp = el.compass ? el.compass.getContext("2d") : null; el.mm = el.minimap ? el.minimap.getContext("2d") : null; el.or = el.orient ? el.orient.getContext("2d") : null;
@@ -152,16 +152,6 @@ const HUD = (function () {
   let rep = null;
   const OUT = { ricochet: "Ricochet", blocked: "Arrêté", pen: "Perforation", spall: "Éclats", overmatch: "Overmatch" };
 
-  /* État global du char local */
-  function globalState(t) {
-    if (!t || t.destroyed) return { cls: "dead", txt: "DÉTRUIT" };
-    const I = t.int; if (!I) return { cls: "ok", txt: "OPÉRATIONNEL" };
-    const crewOk = Dmg.crewAlive(t), crewTot = Dmg.crewTotal(t);
-    const deadCrit = crewOk <= 1 || I.byId.breech.hp <= 0 || I.byId.engine.hp <= 0 || I.byId.trans.hp <= 0;
-    if (deadCrit) return { cls: "crit", txt: "CRITIQUE" };
-    const anyDmg = I.mods.some(m => m.present && m.hp < 0.999);
-    return anyDmg ? { cls: "dmg", txt: "ENDOMMAGÉ" } : { cls: "ok", txt: "OPÉRATIONNEL" };
-  }
 
   /* Ajoute un impact subi (appelé par le moteur de dégâts quand le joueur est touché) */
   H.reportIncoming = function (r) {
@@ -200,51 +190,49 @@ const HUD = (function () {
     hitMarker();
   };
 
-  /* Dessin de l'état du char sur le panneau Véhicule (vue de dessus + barres de vie) */
+  /* Dessin de l'état du char sur le panneau Véhicule (vue de dessus + voyants fonctions) */
   function refreshDamageUI() {
     const t = localTank;
-    const st = globalState(t);
 
     const vehCanvas = document.getElementById("veh-view");
     if (!vehCanvas) return;
     const vehCtx = vehCanvas.getContext("2d");
 
     if (t && t.int) {
-      // Dessin de la silhouette + modules sur le canvas du panneau Véhicule (plus petit)
+      const I = t.int;
+      const M = I.byId;
+
+      // Dessin de la silhouette + modules sur le canvas du panneau Véhicule
       Dmg.drawTank(vehCtx, 100, 100, t, null);
 
-      // Barres de vie : seulement si un module est endommagé ou incendie (moins d'encombrement)
-      const I = t.int, worst = ids => { let w = 1; for (const i of ids) w = Math.min(w, I.byId[i] ? I.byId[i].hp : 1); return w; };
-      const cls = hp => hp <= 0 ? "dead" : hp < 0.999 ? "dmg" : "";
-      const crewTot = Dmg.crewTotal(t), crewOk = Dmg.crewAlive(t);
-      const racks = I.mods.filter(m => m.kind === "ammo").map(m => m.id), fuel = ["fuelL", "fuelR"];
-      const anyDmg = I.mods.some(m => m.present && m.hp < 0.999) || crewOk < crewTot;
-      const rows = [
-        ["Équipage", crewOk <= 1 ? 0 : crewOk < crewTot ? 0.5 : 1],
-        ["Moteur", I.byId.engine.hp],
-        ["Boîte", I.byId.trans.hp],
-        ["Culasse", I.byId.breech.hp],
-        ["Tourelle", I.byId.ring.hp],
-        ["Soutes", worst(racks)],
-        ["Réservoirs", worst(fuel)],
-        ["Ch. G", t.modules.trackLeft ? 1 : 0],
-        ["Ch. D", t.modules.trackRight ? 1 : 0]
-      ];
-      let h = "";
-      rows.forEach(c => {
-        if (c[1] >= 1) return; // module intact : pas de barre
-        const pct = Math.round(c[1] * 100);
-        h += `<div class="veh-row"><span class="veh-lbl">${c[0]}</span><div class="veh-bar"><div class="veh-fill ${cls(c[1])}" style="width:${pct}%"></div></div></div>`;
-      });
-      if (I.fire) h = `<div class="veh-row fire"><span class="veh-lbl">Incendie</span><div class="veh-bar"><div class="veh-fill crit" style="width:100%"></div></div></div>` + h;
-      if (h === "" && !anyDmg) h = `<div class="veh-row ok"><span class="veh-lbl">Tous systèmes OK</span></div>`;
-      const p = el["veh-body"]; // injecter après le canvas
-      if (!p) return;
-      let vb = p.querySelector(".veh-bars");
-      if (!vb) { vb = document.createElement("div"); vb.className = "veh-bars"; p.appendChild(vb); }
-      vb.innerHTML = h;
-      vb.style.display = h === "" ? "none" : "block";
-      // l'état moteur est déjà affiché par #eng-fill dans le panneau Véhicule
+      // Voyants fonctions : rouge = indisponible (module détruit), vert = opérationnel
+      const setLight = (id, ok) => {
+        const b = el[id]; if (!b) return;
+        const dot = b.querySelector(".light-dot");
+        dot.className = "light-dot " + (ok ? "on" : "off");
+      };
+
+      // Avancer : moteur OK + transmission OK + conducteur vivant
+      const driverOk = !M.driver || M.driver.hp > 0;
+      const moveOk = driverOk && M.engine.hp > 0 && M.trans.hp > 0;
+      setLight("light-move", moveOk);
+
+      // Tirer : culasse vivante
+      setLight("light-fire", M.breech.hp > 0);
+
+      // Recharger : chargeur vivant
+      const loaderOk = !M.loader || M.loader.hp > 0;
+      setLight("light-reload", loaderOk);
+
+      // Tourner tourelle : bague vivante + tireur vivant
+      const turretOk = M.ring.hp > 0 && M.gunner.hp > 0;
+      setLight("light-turret", turretOk);
+
+      // Incendie
+      const fireOn = !!I.fire;
+      setLight("light-fireout", !fireOn); // vert = pas d'incendie, rouge = incendie
+      const fireDot = el["light-fireout"]?.querySelector(".light-dot");
+      if (fireDot) fireDot.classList.toggle("blink", fireOn);
     }
 
     drawOutgoingHistory();
@@ -454,17 +442,6 @@ const HUD = (function () {
     // Score
     { const mb = localTank && localTank.teamId === "B"; el["sc-a"].textContent = mb ? teamScore.B : teamScore.A; el["sc-b"].textContent = mb ? teamScore.A : teamScore.B; }
     el["sc-mode"].textContent = rules.modeLabel(); el["sc-obj"].textContent = rules.objectiveText();
-    // Véhicule
-    const kmh = Math.abs(t.speed) / (PIXELS_PER_METER * TICK_RATE) * 3.6;
-    el.spd.textContent = Math.round(kmh);
-    el.gear.textContent = t.gear > 0 ? t.gear : t.gear < 0 ? "R" + (t.gear === -2 ? "2" : "") : "N";
-    el["veh-name"].textContent = t._tankKey; el["veh-cat"].textContent = t.profile.catLabel;
-    const eh = t.engineHealth; el["eng-fill"].style.width = eh + "%"; el["eng-fill"].style.background = eh > 60 ? "var(--ok)" : eh > 25 ? "var(--warn)" : "var(--bad)";
-    const mset = (id, ok, mid) => { const e = el[id]; e.className = ok ? (mid ? "mid" : "") : "bad"; };
-    mset("m-engine", t.modules.engine && eh > 0, eh < 60); mset("m-canon", t.modules.canon); mset("m-trackL", t.modules.trackLeft); mset("m-trackR", t.modules.trackRight);
-    const crewKeys = ["commander", "gunner", "loader", "driver", "radio"], nCrew = t._tankModules.crew || t.profile.crew || 4;
-    let ch = ""; crewKeys.forEach((k, i) => { ch += `<i class="${i >= nCrew && !t.modules.crew[k] && k === "radio" ? "none" : t.modules.crew[k] ? "" : "dead"}"></i>`; });
-    if (el.crew._h !== ch) { el.crew.innerHTML = ch; el.crew._h = ch; }
     // Munitions
     const am = selectedAmmos;
     [0, 1].forEach(i => {
