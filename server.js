@@ -165,13 +165,26 @@ const DB = (function () {
     kind: useUp ? "upstash" : "fichier",
     async get(k, nocache) { if (!nocache && cache.has(k)) return cache.get(k); let v; if (useUp) v = await up(["GET", k]); else { loadFile(); v = fileData[k] ?? null; } if (!nocache) cache.set(k, v); return v; },
     async set(k, v, ex, nocache) { if (!nocache) cache.set(k, v); if (useUp) await up(ex ? ["SET", k, v, "EX", ex] : ["SET", k, v]); else { loadFile(); fileData[k] = v; flush(); } },
-    async del(k) { cache.delete(k); if (useUp) await up(["DEL", k]); else { loadFile(); delete fileData[k]; flush(); } }
+    async del(k) { cache.delete(k); if (useUp) await up(["DEL", k]); else { loadFile(); delete fileData[k]; flush(); } },
+    /* Liste les clés qui commencent par un préfixe (admin). Upstash : KEYS — ok pour un petit jeu. */
+    async keys(prefix) {
+      prefix = String(prefix || "");
+      if (useUp) {
+        const all = await up(["KEYS", prefix + "*"]);
+        return Array.isArray(all) ? all : [];
+      }
+      loadFile();
+      return Object.keys(fileData).filter(k => k.startsWith(prefix));
+    }
   };
 })();
 if (DB.kind === "fichier") console.log("  Comptes : stockage dans " + path.join(DATA_DIR, "db.json") + "  (pour une sauvegarde durable en ligne, voir docs/HEBERGER_GRATUITEMENT.md : Upstash)");
 else console.log("  Comptes : stockage Upstash Redis ✔");
 
 const NAME_RE = /^[A-Za-z0-9_-]{3,16}$/, RESERVED = new Set(["admin", "administrateur", "moderateur", "modo", "serveur", "server", "system", "systeme", "invite", "guest", "root", "anthropic", "claude"]);
+/* Pseudos admin (minuscules). Le compte « Surrealpad » a accès au panneau /admin.html et aux routes /api/admin/*. */
+const ADMIN_NAMES = new Set(["surrealpad"]);
+const isAdminName = n => ADMIN_NAMES.has(String(n || "").toLowerCase());
 const SAVE_KEYS = /^(XP|XPEarned|SelectedTank|SelectedAmmo1|SelectedAmmo2|researchOrient|match_history|customTankDesigns|customTankActive|researched_.+|claimed_.+|camp_completed_.+|stat_.+)$/;
 const SAVE_MAX = 380000, FRIENDS_MAX = 50, REQ_MAX = 30, SESSION_S = 60 * 86400;
 const sessCache = new Map();                          // jeton → { n: pseudo (minuscules), e: expiration, g: génération }
@@ -261,7 +274,7 @@ async function friendsPayload(u) {
   return { friends: out, incoming: await nm(u.inReq), outgoing: await nm(u.outReq) };
 }
 
-const ACC_ROUTES = new Set(["/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/password", "/api/auth/delete", "/api/me", "/api/save", "/api/friends", "/api/friends/add", "/api/friends/respond", "/api/friends/remove"]);
+const ACC_ROUTES = new Set(["/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/password", "/api/auth/delete", "/api/me", "/api/save", "/api/friends", "/api/friends/add", "/api/friends/respond", "/api/friends/remove", "/api/admin/users", "/api/admin/user", "/api/admin/user/xp", "/api/admin/user/password", "/api/admin/user/research", "/api/admin/user/save", "/api/admin/user/delete"]);
 function apiAccounts(req, res, url) {
   if (!ACC_ROUTES.has(url)) return false;
   if (req.method === "OPTIONS") {
@@ -317,7 +330,7 @@ async function handleAcc(req, res, url) {
   if (!low) return json(res, req, 401, { error: "Session expirée : reconnectez-vous.", auth: false });
   const me = await getUser(low); if (!me) return json(res, req, 401, { error: "Compte introuvable.", auth: false });
   if (url === "/api/auth/logout" && M === "POST") { sessCache.delete(tok); await DB.del("ta:t:" + tok); return json(res, req, 200, { ok: true }); }
-  if (url === "/api/me" && M === "GET") return json(res, req, 200, { user: pubUser(me), save: me.save, storage: DB.kind, persistent: DB.kind === "upstash" });
+  if (url === "/api/me" && M === "GET") return json(res, req, 200, { user: pubUser(me), save: me.save, storage: DB.kind, persistent: DB.kind === "upstash", admin: isAdminName(me.name) });
   if (url === "/api/auth/delete" && M === "POST") {                // suppression complète du compte et de ses données
     const b = await readBody(req, 2000), pass = String(b.pass || "");
     if (limited("del:" + low, 5, 600000)) return json(res, req, 429, { error: "Trop de tentatives." });
@@ -396,6 +409,177 @@ async function handleAcc(req, res, url) {
     const fresh = await getUser(low); if (!fresh) return json(res, req, 401, { error: "Compte introuvable.", auth: false });
     return json(res, req, 200, Object.assign({ msg: r.msg }, await friendsPayload(fresh)));
   }
+
+  /* ── Admin (compte Surrealpad uniquement) ── */
+  if (!isAdminName(me.name)) return json(res, req, 403, { error: "Réservé à l'administrateur." });
+  if (limited("adm:" + low, 120, 600000)) return json(res, req, 429, { error: "Trop de requêtes admin." });
+
+  if (url === "/api/admin/users" && M === "GET") {
+    const keys = await DB.keys("ta:u:");
+    const list = [];
+    for (const k of keys) {
+      const u = await getUser(k.slice(5));
+      if (!u) continue;
+      let xp = 0, researched = 0;
+      try {
+        const raw = await DB.get("ta:s:" + u.name.toLowerCase(), true);
+        if (raw) {
+          const s = JSON.parse(raw);
+          const d = (s && s.data) || {};
+          xp = Number(d.XP) || 0;
+          researched = Object.keys(d).filter(x => x.startsWith("researched_") && d[x]).length;
+        }
+      } catch (e) { }
+      list.push({
+        name: u.name,
+        admin: isAdminName(u.name),
+        created: u.created || 0,
+        last: u.last || 0,
+        friends: (u.friends || []).length,
+        xp,
+        researched,
+        online: friendView(u.name.toLowerCase()).online
+      });
+    }
+    list.sort((a, b) => (b.last || 0) - (a.last || 0));
+    return json(res, req, 200, { users: list, storage: DB.kind });
+  }
+
+  if (url === "/api/admin/user" && M === "GET") {
+    const q = String((req.url.split("?")[1] || "").split("&").find(x => x.startsWith("name=")) || "").slice(5);
+    const tl = decodeURIComponent(q || "").trim().toLowerCase();
+    if (!NAME_RE.test(tl)) return json(res, req, 400, { error: "Pseudo invalide." });
+    const u = await getUser(tl);
+    if (!u) return json(res, req, 404, { error: "Compte introuvable." });
+    let save = null;
+    try {
+      const raw = await DB.get("ta:s:" + tl, true);
+      if (raw) save = JSON.parse(raw);
+    } catch (e) { }
+    return json(res, req, 200, {
+      user: { name: u.name, created: u.created, last: u.last, friends: u.friends || [], admin: isAdminName(u.name) },
+      save: save || { t: 0, data: {} }
+    });
+  }
+
+  if (url === "/api/admin/user/xp" && M === "POST") {
+    const b = await readBody(req, 2000);
+    const tl = String(b.name || "").trim().toLowerCase();
+    const xp = Math.max(0, Math.min(50_000_000, Math.floor(Number(b.xp) || 0)));
+    if (!NAME_RE.test(tl)) return json(res, req, 400, { error: "Pseudo invalide." });
+    const u = await getUser(tl);
+    if (!u) return json(res, req, 404, { error: "Compte introuvable." });
+    await serial(async () => {
+      let save = { t: Date.now(), data: {} };
+      try {
+        const raw = await DB.get("ta:s:" + tl, true);
+        if (raw) save = JSON.parse(raw) || save;
+      } catch (e) { }
+      save.data = save.data || {};
+      save.data.XP = String(xp);
+      save.t = Date.now();
+      await DB.set("ta:s:" + tl, JSON.stringify(save), 0, true);
+      u.save = { t: save.t }; await putUser(u);
+    });
+    console.log("[admin] XP de " + u.name + " → " + xp + " (par " + me.name + ")");
+    return json(res, req, 200, { ok: true, xp });
+  }
+
+  if (url === "/api/admin/user/password" && M === "POST") {
+    const b = await readBody(req, 2000);
+    const tl = String(b.name || "").trim().toLowerCase();
+    const pass = String(b.pass || "");
+    if (!NAME_RE.test(tl)) return json(res, req, 400, { error: "Pseudo invalide." });
+    if (pass.length < 6 || pass.length > 100) return json(res, req, 400, { error: "Mot de passe : 6 caractères minimum." });
+    const u = await getUser(tl);
+    if (!u) return json(res, req, 404, { error: "Compte introuvable." });
+    const salt = crypto.randomBytes(16), hash = await scrypt(pass, salt);
+    await serial(async () => {
+      const fresh = await getUser(tl); if (!fresh) return;
+      fresh.salt = salt.toString("hex");
+      fresh.hash = hash.toString("hex");
+      fresh.sg = (fresh.sg || 0) + 1;
+      await putUser(fresh);
+      revokeSessions(tl);
+    });
+    console.log("[admin] mot de passe réinitialisé : " + u.name + " (par " + me.name + ")");
+    return json(res, req, 200, { ok: true });
+  }
+
+  if (url === "/api/admin/user/research" && M === "POST") {
+    const b = await readBody(req, 20000);
+    const tl = String(b.name || "").trim().toLowerCase();
+    if (!NAME_RE.test(tl)) return json(res, req, 400, { error: "Pseudo invalide." });
+    const u = await getUser(tl);
+    if (!u) return json(res, req, 404, { error: "Compte introuvable." });
+    const tanks = Array.isArray(b.tanks) ? b.tanks.map(x => String(x).slice(0, 80)).filter(Boolean).slice(0, 200) : [];
+    const unlockAll = !!b.unlockAll;
+    await serial(async () => {
+      let save = { t: Date.now(), data: {} };
+      try {
+        const raw = await DB.get("ta:s:" + tl, true);
+        if (raw) save = JSON.parse(raw) || save;
+      } catch (e) { }
+      save.data = save.data || {};
+      // Nettoyer les anciennes clés researched_
+      for (const k of Object.keys(save.data)) if (k.startsWith("researched_")) delete save.data[k];
+      if (unlockAll) {
+        save.data.researched_ALL = "1";
+      } else {
+        for (const tank of tanks) save.data["researched_" + tank] = "1";
+      }
+      save.t = Date.now();
+      await DB.set("ta:s:" + tl, JSON.stringify(save), 0, true);
+      u.save = { t: save.t }; await putUser(u);
+    });
+    console.log("[admin] recherche de " + u.name + " mise à jour (par " + me.name + ")");
+    return json(res, req, 200, { ok: true, count: unlockAll ? "all" : tanks.length });
+  }
+
+  if (url === "/api/admin/user/save" && M === "POST") {
+    const b = await readBody(req, 50000);
+    const tl = String(b.name || "").trim().toLowerCase();
+    if (!NAME_RE.test(tl)) return json(res, req, 400, { error: "Pseudo invalide." });
+    const u = await getUser(tl);
+    if (!u) return json(res, req, 404, { error: "Compte introuvable." });
+    const patch = b.data && typeof b.data === "object" ? b.data : {};
+    await serial(async () => {
+      let save = { t: Date.now(), data: {} };
+      try {
+        const raw = await DB.get("ta:s:" + tl, true);
+        if (raw) save = JSON.parse(raw) || save;
+      } catch (e) { }
+      save.data = save.data || {};
+      for (const [k, v] of Object.entries(patch)) {
+        if (!SAVE_KEYS.test(k)) continue;
+        if (v === null) delete save.data[k];
+        else save.data[k] = String(v).slice(0, 20000);
+      }
+      save.t = Date.now();
+      await DB.set("ta:s:" + tl, JSON.stringify(save), 0, true);
+      u.save = { t: save.t }; await putUser(u);
+    });
+    console.log("[admin] sauvegarde patchée : " + u.name + " (par " + me.name + ")");
+    return json(res, req, 200, { ok: true });
+  }
+
+  if (url === "/api/admin/user/delete" && M === "POST") {
+    const b = await readBody(req, 2000);
+    const tl = String(b.name || "").trim().toLowerCase();
+    if (!NAME_RE.test(tl)) return json(res, req, 400, { error: "Pseudo invalide." });
+    if (tl === low) return json(res, req, 400, { error: "Vous ne pouvez pas supprimer votre propre compte admin ici." });
+    const u = await getUser(tl);
+    if (!u) return json(res, req, 404, { error: "Compte introuvable." });
+    await serial(async () => {
+      await DB.del("ta:u:" + tl);
+      await DB.del("ta:s:" + tl);
+      revokeSessions(tl);
+      userGen.delete(tl);
+    });
+    console.log("[admin] compte supprimé : " + u.name + " (par " + me.name + ")");
+    return json(res, req, 200, { ok: true });
+  }
+
   return json(res, req, 404, { error: "Route inconnue." });
 }
 

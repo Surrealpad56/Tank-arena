@@ -1,0 +1,13 @@
+# Administration Surrealpad
+
+1. Créer / se connecter avec le pseudo exact : Surrealpad
+2. Ouvrir /admin.html ou le bouton Administration dans Compte
+3. Outils : cinématiques, atelier chars, gestion comptes (XP, MDP, recherche, suppression)
+
+Fichiers :
+  admin.html
+  server.js
+  js/account.js
+  js/admin-panel.js
+  js/lobby-account.js
+  js/lobby-state.js

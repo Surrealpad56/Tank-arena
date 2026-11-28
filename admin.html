@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tank Arena — Administration</title>
+  <link rel="stylesheet" href="css/theme.css">
+  <style>
+    body { margin: 0; background: #0a0e11; color: var(--text, #e8eef2); font-family: system-ui, sans-serif; min-height: 100vh; }
+    header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid rgba(190,215,230,.12); background: rgba(12,16,20,.9); position: sticky; top: 0; z-index: 5; }
+    header h1 { margin: 0; font: 700 20px "Roboto Condensed", sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+    header .tag { color: #ffb000; font: 600 11px sans-serif; letter-spacing: .2em; text-transform: uppercase; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 28px; }
+    .tool { display: block; padding: 16px; background: rgba(12,16,20,.85); border: 1px solid rgba(190,215,230,.18); text-decoration: none; color: inherit; transition: border-color .12s; }
+    .tool:hover { border-color: #ffb000; }
+    .tool b { display: block; font: 700 15px "Roboto Condensed", sans-serif; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px; }
+    .tool span { font-size: 13px; color: #93a1ab; line-height: 1.4; }
+    .panel { background: rgba(12,16,20,.85); border: 1px solid rgba(190,215,230,.18); padding: 16px; margin-bottom: 18px; }
+    .panel h2 { margin: 0 0 12px; font: 700 16px "Roboto Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #ffb000; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid rgba(190,215,230,.1); }
+    th { color: #93a1ab; font-weight: 600; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+    .btn { background: transparent; border: 1px solid rgba(190,215,230,.28); color: #e8eef2; padding: 8px 12px; font: 600 12px "Roboto Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+    .btn:hover { border-color: #ffb000; color: #ffb000; }
+    .btn.primary { background: #ffb000; border-color: #ffb000; color: #111; }
+    .btn.danger { border-color: #ff5a44; color: #ff5a44; }
+    .btn.sm { padding: 4px 8px; font-size: 11px; }
+    input, textarea, select { background: #0a0f12; border: 1px solid rgba(190,215,230,.25); color: #e8eef2; padding: 8px 10px; font: 14px system-ui; width: 100%; box-sizing: border-box; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+    .row > * { flex: 1; min-width: 120px; }
+    .msg { padding: 10px 12px; margin: 10px 0; background: rgba(255,176,0,.1); border-left: 3px solid #ffb000; font-size: 13px; }
+    .err { border-left-color: #ff5a44; background: rgba(255,90,68,.1); }
+    .ok { border-left-color: #5fd38a; background: rgba(95,211,138,.1); }
+    .muted { color: #93a1ab; font-size: 13px; }
+    .badge { display: inline-block; padding: 2px 6px; font-size: 11px; border: 1px solid #ffb000; color: #ffb000; }
+    .online { color: #5fd38a; }
+    #gate { max-width: 420px; margin: 12vh auto; padding: 24px; background: rgba(12,16,20,.9); border: 1px solid rgba(190,215,230,.2); }
+    #gate h1 { margin-top: 0; font: 700 22px "Roboto Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="gate">
+    <h1>Administration</h1>
+    <p class="muted">Connectez-vous avec le compte <b>Surrealpad</b> pour accéder aux outils de développement.</p>
+    <div class="row"><input id="g-name" placeholder="Pseudo" value="Surrealpad" autocomplete="username"></div>
+    <div class="row"><input id="g-pass" type="password" placeholder="Mot de passe" autocomplete="current-password"></div>
+    <div class="row"><button class="btn primary" id="g-login">Connexion</button>
+      <a class="btn" href="lobby.html">Retour QG</a></div>
+    <div id="g-msg" class="msg hidden"></div>
+  </div>
+
+  <div id="app" class="hidden">
+    <header>
+      <div>
+        <div class="tag">Poste de commandement · Admin</div>
+        <h1>Tank Arena</h1>
+      </div>
+      <div class="row" style="flex:0; min-width:auto">
+        <span class="muted" id="who">—</span>
+        <a class="btn sm" href="lobby.html">QG</a>
+        <button class="btn sm" id="b-logout">Déconnexion</button>
+      </div>
+    </header>
+    <div class="wrap">
+      <h2 style="font:700 14px sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#93a1ab;margin:0 0 12px">Outils de développement</h2>
+      <div class="grid">
+        <a class="tool" href="cinematic-editor.html"><b>Créateur de cinématiques</b><span>Caméras, scènes, clés de mouvement.</span></a>
+        <a class="tool" href="editor.html"><b>Créateur de chars</b><span>Atelier 3D, pièces, peintures.</span></a>
+        <a class="tool" href="docs/" target="_blank" rel="noopener"><b>Documentation</b><span>Hébergement, maps (map-defs.js).</span></a>
+        <a class="tool" href="lobby.html#settings"><b>Réglages / tunnel</b><span>Multijoueur, options serveur local.</span></a>
+      </div>
+
+      <div class="panel">
+        <h2>Comptes</h2>
+        <div class="row">
+          <button class="btn primary" id="b-refresh">Rafraîchir</button>
+          <span class="muted" id="users-meta">—</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Pseudo</th><th>XP</th><th>Recherche</th><th>Amis</th><th>Dernière</th><th>État</th><th></th></tr></thead>
+            <tbody id="users-body"><tr><td colspan="7" class="muted">Chargement…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" id="edit-panel">
+        <h2>Éditer un compte <span id="edit-name" class="badge hidden">—</span></h2>
+        <p class="muted">Sélectionnez un joueur dans la liste.</p>
+        <div id="edit-body" class="hidden">
+          <div class="row">
+            <div><label class="muted">XP</label><input id="e-xp" type="number" min="0" step="100"></div>
+            <button class="btn" id="e-xp-save">Appliquer XP</button>
+          </div>
+          <div class="row">
+            <div><label class="muted">Nouveau mot de passe</label><input id="e-pass" type="password" placeholder="6 caractères min."></div>
+            <button class="btn" id="e-pass-save">Réinitialiser MDP</button>
+          </div>
+          <div class="row">
+            <button class="btn" id="e-unlock-all">Débloquer toute la recherche</button>
+            <button class="btn danger" id="e-delete">Supprimer le compte</button>
+          </div>
+          <details style="margin-top:12px">
+            <summary class="muted">Sauvegarde brute (clés de progression)</summary>
+            <textarea id="e-save" rows="10" style="margin-top:8px;font-family:monospace;font-size:12px"></textarea>
+            <div class="row"><button class="btn" id="e-save-apply">Appliquer le JSON (clés autorisées)</button></div>
+          </details>
+        </div>
+        <div id="edit-msg" class="msg hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/account.js"></script>
+  <script src="js/admin-panel.js"></script>
+</body>
+</html>
