@@ -46,6 +46,12 @@
       <div id="mini-cap" class="disp"><span id="mini-theme">—</span><span id="fps" class="num hidden"></span></div>
     </div>
 
+    <!-- Schéma du dernier char ennemi touché (haut gauche, petit) -->
+    <div id="foe" class="cut hidden">
+      <div id="foe-head"><span id="foe-name">—</span><span id="foe-crew" class="num">—</span></div>
+      <canvas id="foe-cv" width="260" height="150"></canvas>
+    </div>
+
     <!-- Journal d'événements -->
     <div id="feed"></div>
 
@@ -116,6 +122,15 @@
     </div>
 
     <!-- Aide rapide -->
+    <!-- Marqueur de réparation (indépendant du journal) -->
+    <div id="repair-mark" class="hidden" aria-live="polite">
+      <div class="rm-ring"><i id="rm-fill"></i></div>
+      <div class="rm-meta">
+        <span id="rm-time" class="num">—</span>
+        <span id="rm-mod" class="disp">Réparation</span>
+      </div>
+    </div>
+
     <div id="respawn" class="hidden"><div class="disp rt">Véhicule détruit</div><div id="respawn-txt" class="num"></div></div>
     <div id="toast" class="hidden"></div>
   </div>
@@ -126,7 +141,7 @@
     <div id="t-reload" aria-live="polite"><span id="t-reload-label">CANON</span><div><i id="t-reload-fill"></i></div></div>
     <button id="t-fire" class="disp">TIR</button>
     <button id="t-snipe" class="disp">VISÉE</button>
-    <button id="t-repair" class="disp" disabled aria-disabled="true" title="Réparation disponible à l’arrêt">RÉPARER</button>
+    <button id="t-repair" class="disp" disabled aria-disabled="true" title="Appuyer une fois pour réparer (à l’arrêt)">RÉPARER</button>
     <button id="t-ammo" class="disp">OBUS</button>
     <button id="t-pause" class="disp">Ⅱ</button>
   </div>
