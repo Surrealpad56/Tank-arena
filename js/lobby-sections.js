@@ -1,6 +1,6 @@
 /* ==========================================================================
-   LOBBY-SECTIONS.JS — Les six sections du poste de commandement :
-   01 QG · 02 Combat · 03 Hangar · 04 Recherche · 05 Carrière · 06 Réglages.
+   LOBBY-SECTIONS.JS — Les huit sections du poste de commandement :
+   01 QG · 02 Combat · 03 Hangar · 04 Recherche · 05 Carrière · 06 Réglages · 07 Atelier · 08 Compte.
    Toutes les valeurs affichées proviennent des données réelles du jeu
    (shared-data.js, tank-catalog.js, Store) — aucune information factice.
    ========================================================================== */
@@ -49,22 +49,25 @@ const Multi = {
   statusHTML() {
     const r = Multi.room;
     if (!r) return `<b style="color:var(--warn,#ff8a3d)">Serveur introuvable.</b> Lancez <code>node server.js</code> sur le PC hôte puis vérifiez l'adresse ci-dessus.`;
-    if (!r.open) return `Serveur joignable · aucune partie en cours : <b>vous la créez</b> et devenez l'hôte.`;
-    const th = r.cfg && r.cfg.theme ? (MAP_THEME_LABELS[r.cfg.theme] || r.cfg.theme) : "?";
-    return `Partie de <b>${escHTML(r.host || "?")}</b> · ${th} · ${r.players.length} joueur${r.players.length > 1 ? "s" : ""} (${r.players.map(p => escHTML(p.name)).join(", ")}) → <b>vous la rejoignez</b>.`;
+    const rooms = Array.isArray(r.rooms) ? r.rooms : [];
+    if (!rooms.length) return `Serveur joignable · aucune partie en cours : <b>vous la créez</b> et devenez l'hôte.`;
+    const s = rooms[0], th = MAP_THEME_LABELS[s.theme] || s.theme || "?";
+    return `Partie de <b>${escHTML(s.host || "?")}</b> · ${escHTML(th)} · ${s.players || 0} joueur${s.players === 1 ? "" : "s"} · ${rooms.length} salon${rooms.length > 1 ? "s" : ""}`;
   }
 };
 /* ───── Réglages → Multijoueur : lien public (tunnel) piloté par server.js ───── */
 const MultiHost = {
-  st: undefined, poll: null,
+  st: undefined, poll: null, key: "",
   async call(method) {
-    try { const r = await fetch("/api/tunnel", { method, cache: "no-store", headers: { "X-TA": "1" } }); if (!r.ok) throw new Error("HTTP " + r.status); MultiHost.st = await r.json(); } catch (e) { MultiHost.st = null; }
+    const h = {}; if (MultiHost.key) h["X-TA-Key"] = MultiHost.key;
+    try { const r = await fetch("/api/tunnel", { method, cache: "no-store", headers: h }); if (!r.ok) throw new Error("HTTP " + r.status); MultiHost.st = await r.json(); } catch (e) { MultiHost.st = null; }
     return MultiHost.st;
   },
   html() {
     const s = MultiHost.st;
     if (s === undefined) return `<div class="note">Recherche du serveur…</div>`;
     if (s === null) return `<div class="note"><b>Serveur non détecté.</b> Fermez cette page, double-cliquez sur <b>Lancer_serveur.bat</b> (dans le dossier du jeu), puis ouvrez <b>http://localhost:3000</b> dans le navigateur.</div>`;
+    if (s.needKey && !MultiHost.key) return `<div class="field"><div><b>Lien public</b><small>Le serveur exige la clé TA_TUNNEL_KEY (définie avant son lancement)</small></div><input class="inp" id="mh-key" type="password" placeholder="Clé du serveur" style="max-width:220px"></div><div style="margin-top:8px"><button class="btn sm" data-a="mhKey">Valider la clé</button></div>`;
     const ctl = s.canControl ? "" : "disabled";
     const lan = s.lan && s.lan.length ? `<div class="field"><div><b>Même wifi</b><small>Fonctionne seulement si le pare-feu Windows l'autorise</small></div><span class="num">${s.lan.map(escHTML).join("<br>")}</span></div>` : "";
     let t;
@@ -236,13 +239,13 @@ const SecHQ = {
         <div class="wt-panel card cut">
           <div class="wt-panel-head">Dernière partie</div>
           <div class="wt-panel-body">
-            ${hist ? `<div class="wt-history"><span class="r ${hist.result === "WIN" ? "w" : "l"}">${hist.result === "WIN" ? "V" : "D"}</span><div><strong>${escHTML(hist.tank || "")}</strong><small>${MODE_NAME[hist.mode] || hist.mode} · ${MAP_THEME_LABELS[hist.map] || hist.map}</small></div><b class="num">+${fmt(hist.xp || 0)}</b></div>` : `<div class="muted">Aucune partie jouée.</div>`}
+            ${hist ? `<div class="wt-history"><span class="r ${hist.result === "WIN" ? "w" : "l"}">${hist.result === "WIN" ? "V" : "D"}</span><div><strong>${escHTML(hist.tank || "")}</strong><small>${escHTML(MODE_NAME[hist.mode] || hist.mode || "—")} · ${escHTML(MAP_THEME_LABELS[hist.map] || hist.map || "—")}</small></div><b class="num">+${fmt(hist.xp || 0)}</b></div>` : `<div class="muted">Aucune partie jouée.</div>`}
           </div>
         </div>
       </div>
     </div>`;
 
-    Preview.attach($("#hq-view")); Preview.show(tank).then(() => { const s = $("#hq-model"); if (s) { s.textContent = Preview.model ? "Modèle 3D fourni" : "Assemblage procédural"; s.className = "status tag " + (Preview.model ? "ok" : ""); } });
+    Preview.attach($("#hq-view")); Preview.show(tank).then(() => { const s = $("#hq-model"); if (s) { s.textContent = Preview.model ? "Modèle 3D fourni" : "Modèle générique du jeu"; s.className = "status tag " + (Preview.model ? "ok" : ""); s.style.textTransform = "none"; } });
     on(el, {
       launch: () => launch(),
       goPlay: () => Nav.go("play"),
@@ -391,7 +394,7 @@ const SecHangar = {
         <div class="card"><h3>Munitions <span class="muted" style="font-size:13px;letter-spacing:.06em;text-transform:none">Touches 1 et 2 en combat</span></h3><div class="body"><div class="ammo-row">${ammoKeys.map(k => { const d = I.m.ammo[k], sel1 = isCur && k === a1, sel2 = isCur && k === a2; const info = ammoData[k] || {}; return `<div class="am ${sel1 ? "s1" : sel2 ? "s2" : ""}" title="${escHTML(info.desc || "")}"><b style="color:${info.color || "#fff"}">${k}</b>${sel1 ? `<span class="sl tag" style="color:var(--ally);border-color:var(--ally)">Obus 1</span>` : sel2 ? `<span class="sl tag amber">Obus 2</span>` : ""}<small>Pénétration ${d.penetration} mm · dégâts ${d.damage}</small><small>${d.muzzleVelocity} m/s · ${d.caliber} mm</small><div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm" data-a="ammo" data-s="1" data-k="${k}" ${isCur ? "" : "disabled"}>1</button><button class="btn sm" data-a="ammo" data-s="2" data-k="${k}" ${isCur ? "" : "disabled"}>2</button></div></div>`; }).join("")}</div>
         ${isCur ? "" : `<div class="note" style="margin-top:10px">Choisissez ce véhicule pour configurer ses munitions.</div>`}</div></div></div>
       <div class="card hg-spec cut"><h3>Fiche technique</h3><div class="body">${specBlock(I)}${armorSVG(I)}<div class="note" style="margin-top:10px">Valeurs réellement utilisées par le moteur de combat.</div><div style="margin-top:12px"><button class="btn" data-a="atelier">Modifier l'apparence (Atelier)</button></div></div></div></div>`;
-    Preview.attach($("#hg-view")); Preview.show(hg.sel).then(() => { const s = $("#hg-model"); if (s) { s.textContent = Preview.model ? "Modèle 3D fourni" : "Assemblage procédural"; s.className = "status tag " + (Preview.model ? "ok" : ""); } });
+    Preview.attach($("#hg-view")); Preview.show(hg.sel).then(() => { const s = $("#hg-model"); if (s) { s.textContent = Preview.model ? "Modèle 3D fourni" : "Modèle générique du jeu"; s.className = "status tag " + (Preview.model ? "ok" : ""); s.style.textTransform = "none"; } });
     const re = () => SecHangar.render(el);
     on(el, {
       cat: d => { hg.cat = d.v; re(); }, nat: d => { hg.nat = d.v; re(); }, pick: d => { hg.sel = d.n; re(); }, goResearch: () => Nav.go("research"), atelier: () => { location.href = "editor.html?tank=" + encodeURIComponent(hg.sel); },
@@ -596,7 +599,7 @@ const SecCareer = {
     el.innerHTML = `<div class="kpis">${[["Parties", fmt(s.parties)], ["Victoires", s.winrate === null ? "—" : s.wins + " (" + s.winrate + " %)"], ["Éliminations", fmt(s.kills)], ["Ratio élim./morts", s.kd === null ? "—" : s.kd], ["Dégâts infligés", fmt(s.damage)], ["Précision", s.acc === null ? "—" : s.acc + " %"]].map(([k, v]) => `<div class="kpi"><span>${k}</span><b class="num">${v}</b></div>`).join("")}</div>
       <div class="grid2" style="margin-top:20px;align-items:start">
         <div class="card"><h3>Jalons <span class="muted" style="text-transform:none;letter-spacing:.04em;font-size:13px">XP à réclamer</span></h3><div class="body"><div class="miles" style="grid-template-columns:1fr">${M.map(m => `<div class="mil ${m.claimed ? "claimed" : ""}"><div class="top"><b>${m.name}</b><span class="rw">+${fmt(m.xp)} XP</span></div><small>${m.desc}</small><div class="bar"><i style="width:${Math.round(m.cur / m.goal * 100)}%;${m.claimed ? "background:var(--ok)" : ""}"></i></div><div class="row"><span class="num muted" style="font-size:13px">${fmt(m.cur)} / ${fmt(m.goal)}</span>${m.claimed ? `<span class="tag ok">Réclamé</span>` : `<button class="btn sm primary" data-a="claim" data-id="${m.id}" ${m.ready ? "" : "disabled"}>Réclamer</button>`}</div></div>`).join("")}</div></div></div>
-        <div class="card"><h3>Historique <span class="muted" style="text-transform:none;letter-spacing:.04em;font-size:13px">12 dernières parties</span></h3><div class="body" style="padding:0">${H.length ? `<table class="hist-t"><thead><tr><th>Issue</th><th>Véhicule</th><th>Mode · carte</th><th>Élim.</th><th>XP</th></tr></thead><tbody>${H.map(h => `<tr><td class="${h.result === "WIN" ? "w" : "l"}">${h.result === "WIN" ? "Victoire" : "Défaite"}</td><td>${escHTML(h.tank || "—")}</td><td>${MODE_NAME[h.mode] || h.mode || "—"} · ${MAP_THEME_LABELS[h.map] || h.map}<div class="faint" style="font-size:12px">${h.score || ""}</div></td><td class="num">${h.kills}</td><td class="num" style="color:var(--amber)">+${fmt(h.xp || 0)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">Aucune partie jouée. Les statistiques apparaissent après votre premier combat (hors entraînement).</div>`}</div></div></div>`;
+        <div class="card"><h3>Historique <span class="muted" style="text-transform:none;letter-spacing:.04em;font-size:13px">12 dernières parties</span></h3><div class="body" style="padding:0">${H.length ? `<table class="hist-t"><thead><tr><th>Issue</th><th>Véhicule</th><th>Mode · carte</th><th>Élim.</th><th>XP</th></tr></thead><tbody>${H.map(h => `<tr><td class="${h.result === "WIN" ? "w" : "l"}">${h.result === "WIN" ? "Victoire" : "Défaite"}</td><td>${escHTML(h.tank || "—")}</td><td>${escHTML(MODE_NAME[h.mode] || h.mode || "—")} · ${escHTML(MAP_THEME_LABELS[h.map] || h.map || "—")}<div class="faint" style="font-size:12px">${escHTML(h.score || "")}</div></td><td class="num">${h.kills}</td><td class="num" style="color:var(--amber)">+${fmt(h.xp || 0)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">Aucune partie jouée. Les statistiques apparaissent après votre premier combat (hors entraînement).</div>`}</div></div></div>`;
     on(el, { claim: d => { const x = Store.claim(d.id); if (x) { toast(`+${x} XP réclamés`); refreshAll(); SecCareer.render(el); } } });
   }
 };
@@ -609,10 +612,17 @@ const SecSettings = {
   render(el) {
     const S = Settings.all(), sl = (k, mn, mx, st, fmtv) => `<input type="range" min="${mn}" max="${mx}" step="${st}" value="${S[k]}" data-a="slide" data-k="${k}"><span class="val num" id="v-${k}">${fmtv(S[k])}</span>`;
     const tg = (k) => `<button class="toggle ${S[k] ? "on" : ""}" data-a="tog" data-k="${k}"></button>`;
+    const tri = (k, label, note) => `<div class="field"><div><b>${label}</b><small>${note}</small></div><div class="seg">${[[0, "Auto"], [1, "On"], [-1, "Off"]].map(([v, t]) => `<button data-a="tri" data-k="${k}" data-v="${v}" class="${S[k] === v ? "on" : ""}">${t}</button>`).join("")}</div></div>`;
     const man = window.TANK_MODEL_MANIFEST || {}, keys = Object.keys(TECH_TREE);
     el.innerHTML = `<div class="set-grid"><div>
       <div class="card"><h3>Graphismes</h3><div class="body"><div style="font-size:14px;margin-bottom:2px"><b>Qualité du combat 3D</b><div class="muted" style="font-size:13px">Ombres, densité des forêts, résolution du sol, particules</div></div>
         <div class="qual">${["low", "medium", "high", "ultra"].map(q => `<button class="${S.quality === q ? "on" : ""}" data-a="quality" data-q="${q}"><b>${{ low: "Basse", medium: "Moyenne", high: "Haute", ultra: "Ultra" }[q]}</b><small>${QDESC[q]}</small></button>`).join("")}</div>
+        ${tri("shadows", "Ombres", "Forcer ou couper les ombres portées (au prochain combat)")}
+        ${tri("antialias", "Anticrénelage", "AA matériel, ou FXAA quand les effets cinématiques sont actifs")}
+        ${tri("ao", "Occlusion ambiante", "SSAO — nécessite les effets cinématiques et WebGL2")}
+        <div class="field"><div><b>Tone mapping ACES</b><small>Étalonnage des hautes lumières et des noirs</small></div>${tg("toneMap")}</div>
+        <div class="field"><div><b>Échelle de rendu</b><small>0 = préréglage · augmente sur écran haute densité</small></div><div style="display:flex;align-items:center;gap:10px">${sl("renderScale", 0, 2, 0.05, v => v ? (+v).toFixed(2) + "×" : "Auto")}</div></div>
+        <div class="field"><div><b>Distance de vue</b><small>Brouillard et arbres ; n'affecte pas le repérage</small></div><div style="display:flex;align-items:center;gap:10px">${sl("viewDistance", 0, 2000, 50, v => v ? v + " m" : "Auto")}</div></div>
         <div class="field"><div><b>Champ de vision</b><small>Caméra de poursuite</small></div><div style="display:flex;align-items:center;gap:10px">${sl("fov", 55, 95, 1, v => v + "°")}</div></div>
         <div class="field"><div><b>Distance de caméra</b><small>Valeur par défaut (molette en combat)</small></div><div style="display:flex;align-items:center;gap:10px">${sl("camDist", 8, 22, 1, v => v + " m")}</div></div>
         <div class="field"><div><b>Compteur d'images par seconde</b></div>${tg("showFps")}</div>
@@ -634,7 +644,7 @@ const SecSettings = {
           <li><b>Jouer → Multijoueur → Déployer</b> : le premier crée la partie, les autres la rejoignent.</li>
         </ol><div id="mh-box"></div></div></div>
       <div class="card" style="margin-top:18px"><h3>Modèles 3D <span class="num muted">${keys.filter(k => man[k]).length} / ${keys.length} fournis</span></h3><div class="body">
-        <div class="note" style="margin-bottom:10px">Déposez vos fichiers <b>.glb / .gltf / .obj</b> dans <b>models/</b> puis déclarez-les dans <b>models/models.js</b>. Un char sans modèle utilise l'assemblage procédural de sa catégorie. Un serveur HTTP local est nécessaire pour charger les fichiers.</div>
+        <div class="note" style="margin-bottom:10px">Déposez vos fichiers <b>.glb / .gltf / .obj</b> dans <b>models/</b> puis déclarez-les dans <b>models/models.js</b>. Un char sans modèle utilise le modèle générique intégré au jeu pour sa catégorie. Un serveur HTTP local est nécessaire pour charger les fichiers.</div>
         <table class="mtable">${keys.map(k => `<tr><td>${escHTML(k)}</td><td><span class="tag ${man[k] ? "ok" : ""}">${man[k] ? "Modèle déclaré" : "Procédural · " + getTankProfile(k).catLabel}</span></td></tr>`).join("")}</table></div></div>
       <div class="card" style="margin-top:18px"><h3>Données</h3><div class="body">
         <div class="field"><div><b>Réinitialiser la recherche</b><small>Efface les véhicules acquis, l'XP disponible et la campagne</small></div><button class="btn sm danger" data-a="rsRes">Réinitialiser</button></div>
@@ -645,13 +655,15 @@ const SecSettings = {
       </div></div>`;
     const re = () => SecSettings.render(el);
     MultiHost.bind(el);
-    el.querySelectorAll("input[type=range]").forEach(r => r.oninput = () => { const k = r.dataset.k; Settings.set(k, +r.value); const o = $("#v-" + k); o.textContent = { fov: v => v + "°", camDist: v => v + " m", sens: v => (+v).toFixed(1) + "×", volume: v => Math.round(v * 100) + " %" }[k](+r.value); });
+    el.querySelectorAll("input[type=range]").forEach(r => r.oninput = () => { const k = r.dataset.k; Settings.set(k, +r.value); const o = $("#v-" + k); o.textContent = { fov: v => v + "°", camDist: v => v + " m", sens: v => (+v).toFixed(1) + "×", volume: v => Math.round(v * 100) + " %", renderScale: v => v ? (+v).toFixed(2) + "×" : "Auto", viewDistance: v => v ? v + " m" : "Auto" }[k](+r.value); });
     on(el, {
       mhStart: async () => { await MultiHost.call("POST"); MultiHost.bind(el); }, mhStop: async () => { await MultiHost.call("DELETE"); MultiHost.bind(el); }, mhCopy: () => MultiHost.copy(),
+      mhKey: () => { const i = el.querySelector("#mh-key"); MultiHost.key = (i && i.value || "").trim(); MultiHost.call("GET").then(() => MultiHost.bind(el)); },
       safe: () => { Settings.setSafe(!Settings.safe()); location.reload(); }, quality: d => { Settings.set("quality", d.q); re(); }, tog: d => { Settings.set(d.k, !Settings.get(d.k)); re(); },
+      tri: d => { Settings.set(d.k, +d.v); re(); },
       rsRes: () => confirmBox("Réinitialiser la recherche ?", "Les véhicules recherchés, l'XP disponible et la progression de campagne seront effacés. Les statistiques sont conservées.", "Réinitialiser", () => { Store.resetResearch(); refreshAll(); re(); }, true),
       rsAll: () => confirmBox("Effacer tout le profil ?", "Recherche, statistiques, historique et jalons seront définitivement supprimés.", "Tout effacer", () => { Store.resetAll(); refreshAll(); re(); }, true),
-      rsSet: () => { Settings.reset(); re(); toast("Réglages rétablis"); }, devxp: () => { Store.addXP(1000); refreshAll(); toast("+1 000 XP"); }
+      rsSet: () => { Settings.reset(); re(); toast("Réglages rétablis, mode sans échec désactivé"); setTimeout(() => location.reload(), 600); }, devxp: () => { Store.addXP(1000); refreshAll(); toast("+1 000 XP"); }
     });
   }
 };

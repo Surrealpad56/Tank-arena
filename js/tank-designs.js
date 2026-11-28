@@ -17,17 +17,35 @@
   const LS_D = "customTankDesigns", LS_A = "customTankActive";
   const rd = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const SAFE_ID = /^[A-Za-z0-9_-]{1,40}$/;
 
   /* ───────────── Stockage ───────────── */
   TD.uid = () => "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  TD.all = () => rd(LS_D, {});
-  TD.get = id => TD.all()[id] || null;
-  TD.save = d => { const a = TD.all(); d.id = d.id || TD.uid(); d.updated = Date.now(); a[d.id] = d; localStorage.setItem(LS_D, JSON.stringify(a)); return d.id; };
+  /* Les designs peuvent venir d'un fichier importé : on ne garde que des identifiants
+     sûrs et une structure attendue avant toute lecture/rendu. */
+  TD.all = () => {
+    const raw = rd(LS_D, {}), out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    for (const k of Object.keys(raw).slice(0, 200)) {
+      const d = raw[k];
+      if (!SAFE_ID.test(k) || !d || typeof d !== "object" || !Array.isArray(d.parts)) continue;
+      if (typeof d.name !== "string") d.name = "Char"; else d.name = d.name.slice(0, 60);
+      out[k] = d;
+    }
+    return out;
+  };
+  TD.get = id => (SAFE_ID.test(String(id || "")) ? TD.all()[id] : null);
+  TD.save = d => { const a = TD.all(); d.id = SAFE_ID.test(String(d.id || "")) ? d.id : TD.uid(); d.updated = Date.now(); a[d.id] = d; localStorage.setItem(LS_D, JSON.stringify(a)); return d.id; };
   TD.remove = id => {
     const a = TD.all(); delete a[id]; localStorage.setItem(LS_D, JSON.stringify(a));
     const m = TD.activeMap(); for (const k of Object.keys(m)) if (m[k] === id) delete m[k]; localStorage.setItem(LS_A, JSON.stringify(m));
   };
-  TD.activeMap = () => rd(LS_A, {});
+  TD.activeMap = () => {
+    const raw = rd(LS_A, {}), out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    for (const k of Object.keys(raw).slice(0, 60)) if (SAFE_ID.test(String(raw[k] || ""))) out[k.slice(0, 60)] = raw[k];
+    return out;
+  };
   TD.activeFor = key => { const id = TD.activeMap()[key]; return id ? TD.get(id) : null; };
   TD.setActive = (key, id) => { const m = TD.activeMap(); if (id) m[key] = id; else delete m[key]; localStorage.setItem(LS_A, JSON.stringify(m)); };
 

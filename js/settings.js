@@ -16,6 +16,13 @@ const Settings = (function () {
     post: true,           // effets cinématiques (bloom, occlusion ambiante, étalonnage, grain)
     dynres: true,         // résolution dynamique (baisse l'échelle de rendu si la fluidité chute)
     weatherFx: true,      // météo animée (nuages, pluie, neige, foudre)
+    toneMap: true,        // tone mapping ACES dans le passage final
+    shadows: 0,           // 0 = suivre le préréglage, 1 = forcé, -1 = désactivé
+    antialias: 0,         // idem
+    ao: 0,                // idem (occlusion ambiante)
+    renderScale: 0,       // 0 = automatique, sinon échelle de rendu (0.5 – 2)
+    viewDistance: 0,      // 0 = automatique, sinon distance de brouillard / culling (m)
+    hudCompact: false,    // panneaux Véhicule / Modules réduits
     devTools: false       // outils de test (XP gratuit) dans les réglages
   };
   let cache = null;
@@ -32,11 +39,26 @@ const Settings = (function () {
     try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch (e) { }
   }
   function all() { return Object.assign({}, load()); }
-  function reset() { cache = Object.assign({}, DEFAULTS); try { localStorage.removeItem(KEY); } catch (e) { } }
+  function reset() {
+    cache = Object.assign({}, DEFAULTS);
+    try { localStorage.removeItem(KEY); localStorage.removeItem("TaSafe"); sessionStorage.removeItem("TaSafe"); } catch (e) { }
+    SAFE = false;
+  }
 
   /* Paramètres 3D dérivés de la qualité choisie */
-  /* Mode sans échec : ?safe=1 dans l'adresse (ou le réglage du menu) désactive les effets avancés ; ?safe=0 le retire */
-  const SAFE = (function () { try { const m = String(location.search).match(/[?&]safe=(\d)/); if (m) localStorage.setItem("TaSafe", m[1]); return localStorage.getItem("TaSafe") === "1"; } catch (e) { return false; } })();
+  /* Mode sans échec : ?safe=1 désactive les effets avancés ; ?safe=0 le retire vraiment.
+     Le drapeau n'est plus piégé dans localStorage par une simple visite. */
+  let SAFE = (function () {
+    try {
+      const m = String(location.search).match(/[?&]safe=(\d)/);
+      if (m) {
+        if (m[1] === "1") { sessionStorage.setItem("TaSafe", "1"); localStorage.setItem("TaSafe", "1"); }
+        else { sessionStorage.removeItem("TaSafe"); localStorage.removeItem("TaSafe"); }
+        return m[1] === "1";
+      }
+      return sessionStorage.getItem("TaSafe") === "1" || localStorage.getItem("TaSafe") === "1";
+    } catch (e) { return false; }
+  })();
   const QUALITY = {
     low:    { shadows: false, shadowMap: 1024, pixelRatio: 0.75, trees: 0.25, terrainTex: 1024, antialias: false, particles: 0.5, far: 520,
               post: false, env: false, grass: 0,     decals: 200,  precip: 0.5, clouds: 2, softShadows: false },
@@ -48,9 +70,21 @@ const Settings = (function () {
               post: true, bloom: true, bloomLevels: 5, ssao: true, aoSamples: 12, fxaa: true, msaa: false, grain: true, ca: true, env: true, envI: 0.9, grass: 12000, decals: 1800, precip: 1.4, clouds: 5, softShadows: true }
   };
   function quality() {
-    const q = QUALITY[get("quality")] || QUALITY.high;
+    const q = Object.assign({}, QUALITY[get("quality")] || QUALITY.high);
+    const tri = (k, target) => { const v = get(k); if (v === 1 || v === true) q[target] = true; else if (v === -1 || v === false) q[target] = false; };
+    tri("shadows", "shadows"); tri("antialias", "antialias"); tri("ao", "ssao");
+    const rs = +get("renderScale"); if (rs > 0) q.pixelRatio = Math.max(0.5, Math.min(2, rs));
+    const vd = +get("viewDistance"); if (vd > 0) q.far = Math.max(300, Math.min(2000, vd));
     return SAFE ? Object.assign({}, q, { post: false, env: false, grass: 0, decals: 0, weatherFx: false, precip: 0, softShadows: false }) : q;
   }
 
-  return { get, set, all, reset, quality, DEFAULTS, QUALITY, safe: () => SAFE, setSafe: v => { try { localStorage.setItem("TaSafe", v ? "1" : "0"); } catch (e) { } } };
+  function setSafe(v) {
+    SAFE = !!v;
+    try {
+      if (SAFE) { localStorage.setItem("TaSafe", "1"); sessionStorage.setItem("TaSafe", "1"); }
+      else { localStorage.removeItem("TaSafe"); sessionStorage.removeItem("TaSafe"); }
+    } catch (e) { }
+  }
+
+  return { get, set, all, reset, quality, DEFAULTS, QUALITY, safe: () => SAFE, setSafe };
 })();

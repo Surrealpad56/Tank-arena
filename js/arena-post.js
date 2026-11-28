@@ -61,9 +61,11 @@ const Post = (function () {
       void main(){ float s = 0.0; for (int x = -2; x <= 1; x++) for (int y = -2; y <= 1; y++) s += texture2D(tAO, vUv + (vec2(float(x), float(y)) + 0.5) * uT).r; gl_FragColor = vec4(vec3(s / 16.0), 1.0); }`,
       { tAO: { value: null }, uT: { value: new T.Vector2() } });
     const defs = {}; if (cfg.bloom) defs.BLOOM = 1; if (cfg.ssao) defs.SSAO = 1; if (cfg.grain) defs.GRAIN = 1; if (cfg.ca) defs.CA = 1;
-    M.comp = mk(`uniform sampler2D tScene, tBloom, tAO; uniform float uExp, uBloom, uVig, uGrain, uCA, uSat, uCon, uAO, uTime, uHit, uFlash; uniform vec3 uGain; uniform vec2 uRes; varying vec2 vUv;
+    M.comp = mk(`uniform sampler2D tScene, tBloom, tAO; uniform float uExp, uBloom, uVig, uGrain, uCA, uSat, uCon, uAO, uTime, uHit, uFlash, uTone; uniform vec3 uGain; uniform vec2 uRes; varying vec2 vUv;
       float hsh(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p + 19.19); return fract(p.x * p.y); }
       vec3 roll(vec3 x){ vec3 hi = max(x - 0.72, 0.0); return min(x, vec3(0.72)) + 0.28 * (1.0 - exp(-hi / 0.28)); }
+      /* Tone mapping ACES (approximation Narkowicz) : vrai toe dans les noirs et shoulder doux. */
+      vec3 aces(vec3 x){ const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14; return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0); }
       void main(){ vec2 c = vUv - 0.5; vec3 col;
         #ifdef CA
           col = vec3(texture2D(tScene, vUv + c * uCA).r, texture2D(tScene, vUv).g, texture2D(tScene, vUv - c * uCA).b);
@@ -76,7 +78,7 @@ const Post = (function () {
         #ifdef BLOOM
           col += texture2D(tBloom, vUv).rgb * uBloom;
         #endif
-        col *= uExp * uGain; col = roll(col);
+        col *= uExp * uGain; col = mix(roll(col), aces(col * 1.10), uTone);
         col = (col - 0.5) * uCon + 0.5; col = max(col, 0.0);
         float lum = dot(col, vec3(0.2126, 0.7152, 0.0722)); col = mix(vec3(lum), col, uSat);
         float v = smoothstep(0.95, 0.28, length(c * vec2(1.05, 0.9))); col *= mix(1.0 - uVig, 1.0, v);
@@ -85,8 +87,10 @@ const Post = (function () {
         #ifdef GRAIN
           col += (hsh(vUv * uRes + fract(uTime) * 91.7) - 0.5) * uGrain * (1.15 - lum);
         #endif
-        gl_FragColor = vec4(col, 1.0); }`,
-      { tScene: { value: null }, tBloom: { value: null }, tAO: { value: null }, uExp: { value: 1 }, uBloom: { value: 0.5 }, uVig: { value: 0.3 }, uGrain: { value: 0.035 }, uCA: { value: 0.003 }, uSat: { value: 1 }, uCon: { value: 1.05 }, uAO: { value: 0.8 }, uTime: { value: 0 }, uHit: { value: 0 }, uFlash: { value: 0 }, uGain: { value: new T.Vector3(1, 1, 1) }, uRes: { value: new T.Vector2(1, 1) } }, defs);
+        gl_FragColor = vec4(col, 1.0);
+        #include <encodings_fragment>
+      }`,
+      { tScene: { value: null }, tBloom: { value: null }, tAO: { value: null }, uExp: { value: 1 }, uBloom: { value: 0.5 }, uVig: { value: 0.3 }, uGrain: { value: 0.035 }, uCA: { value: 0.003 }, uSat: { value: 1 }, uCon: { value: 1.05 }, uAO: { value: 0.8 }, uTime: { value: 0 }, uHit: { value: 0 }, uFlash: { value: 0 }, uTone: { value: 1 }, uGain: { value: new T.Vector3(1, 1, 1) }, uRes: { value: new T.Vector2(1, 1) } }, defs);
     M.fxaa = mk(`uniform sampler2D tLdr; uniform vec2 uT; varying vec2 vUv;
       void main(){ vec3 rgbNW = texture2D(tLdr, vUv + vec2(-1.0, -1.0) * uT).rgb, rgbNE = texture2D(tLdr, vUv + vec2(1.0, -1.0) * uT).rgb, rgbSW = texture2D(tLdr, vUv + vec2(-1.0, 1.0) * uT).rgb, rgbSE = texture2D(tLdr, vUv + vec2(1.0, 1.0) * uT).rgb, rgbM = texture2D(tLdr, vUv).rgb;
         vec3 L = vec3(0.299, 0.587, 0.114); float lNW = dot(rgbNW, L), lNE = dot(rgbNE, L), lSW = dot(rgbSW, L), lSE = dot(rgbSE, L), lM = dot(rgbM, L);
@@ -96,7 +100,9 @@ const Post = (function () {
         dir = clamp(dir * rcpDirMin, vec2(-8.0), vec2(8.0)) * uT;
         vec3 rgbA = 0.5 * (texture2D(tLdr, vUv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tLdr, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);
         vec3 rgbB = rgbA * 0.5 + 0.25 * (texture2D(tLdr, vUv + dir * -0.5).rgb + texture2D(tLdr, vUv + dir * 0.5).rgb);
-        float lB = dot(rgbB, L); gl_FragColor = vec4((lB < lMin || lB > lMax) ? rgbA : rgbB, 1.0); }`,
+        float lB = dot(rgbB, L); gl_FragColor = vec4((lB < lMin || lB > lMax) ? rgbA : rgbB, 1.0);
+        #include <encodings_fragment>
+      }`,
       { tLdr: { value: null }, uT: { value: new T.Vector2() } });
   }
 
@@ -144,7 +150,7 @@ const Post = (function () {
       pass(M.aoblur, aob, { tAO: ao.texture, uT: new T.Vector2(1 / ao.width, 1 / ao.height) }); aoTex = aob.texture;
     }
     const night = (typeof Weather !== "undefined" && Weather.tod) ? Weather.tod.bloom : 1;
-    const u = { tScene: rt.texture, tBloom: bloomTex, tAO: aoTex, uExp: g.exp * 1.06, uBloom: 0.42 * g.bloom * (night > 1.3 ? 1.1 : 1) + fl * 0.3, uVig: 0.26 + (g.sat < 0.8 ? 0.06 : 0), uGrain: 0.04, uCA: 0.0026 + hit * 0.006, uSat: g.sat, uCon: g.con, uAO: 0.85, uTime: t, uHit: hit, uFlash: Math.min(1, fl), uRes: new T.Vector2(w, h) };
+    const u = { tScene: rt.texture, tBloom: bloomTex, tAO: aoTex, uExp: g.exp * 1.06, uBloom: 0.42 * g.bloom * (night > 1.3 ? 1.1 : 1) + fl * 0.3, uVig: 0.26 + (g.sat < 0.8 ? 0.06 : 0), uGrain: 0.04, uCA: 0.0026 + hit * 0.006, uSat: g.sat, uCon: g.con, uAO: 0.85, uTime: t, uHit: hit, uFlash: Math.min(1, fl), uTone: (typeof Settings !== "undefined" && Settings.get("toneMap") === false) ? 0 : 1, uRes: new T.Vector2(w, h) };
     M.comp.uniforms.uGain.value.set(g.gain[0], g.gain[1], g.gain[2]);
     pass(M.comp, cfg.fxaa ? ldr : null, u);
     if (cfg.fxaa) pass(M.fxaa, null, { tLdr: ldr.texture, uT: new T.Vector2(1 / w, 1 / h) });

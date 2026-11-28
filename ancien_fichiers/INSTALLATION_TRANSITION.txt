@@ -1,9 +1,0 @@
-MISE À JOUR ARBRE DE RECHERCHE — TRANSITION VISIBLE
-
-1. Décompressez cette archive dans un nouveau dossier.
-2. Conservez la structure des dossiers : lobby.html, css/lobby.css, js/lobby-sections.js, etc.
-3. Ouvrez le lobby.html qui se trouve dans CE dossier.
-4. Ouvrez l’arbre de recherche et appuyez sur ‹ ou › : le contenu doit glisser nettement dans le sens du changement.
-5. Si vous ouvrez le jeu depuis un autre dossier ou une ancienne copie, les changements ne s’y appliqueront pas.
-
-La transition CSS a été renforcée à 460 ms avec un déplacement plus visible. Les catégories verticales, le changement de nation et les lignes de prérequis sont conservés.

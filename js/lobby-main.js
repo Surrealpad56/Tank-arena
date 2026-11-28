@@ -42,6 +42,7 @@ function refreshAll() { refreshHeader(); }
 window.addEventListener("DOMContentLoaded", () => {
   Store.tank(); Store.ammo();
   Nav.build();
+  if (Account.saveWarning && Account.saveWarning()) { toast(Account.saveWarning()); Account.clearSaveWarning(); }
   const nm = $("#p-name"); nm.value = Store.name(); nm.onchange = () => { Store.setName(nm.value); nm.value = Store.name(); };
   const lockName = () => { nm.value = Store.name(); nm.disabled = Account.loggedIn(); nm.title = Account.loggedIn() ? "Nom de votre compte" : ""; };     // connecté : le nom est celui du compte
   Account.on(() => { lockName(); refreshHeader(); }); lockName();

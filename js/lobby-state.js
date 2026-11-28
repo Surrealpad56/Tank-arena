@@ -72,7 +72,21 @@ const Store = (function () {
     return { parties: p, wins: w, losses: p - w, kills: k, deaths: d, shots: sh, hits: hi, damage: dm, maxKills: int("stat_maxkills"),
       winrate: p ? Math.round(w / p * 100) : null, kd: d ? +(k / d).toFixed(2) : (k ? k : null), acc: sh ? Math.round(hi / sh * 100) : null, avgDmg: p ? Math.round(dm / p) : null };
   };
-  S.history = function () { try { return JSON.parse(L.getItem("match_history") || "[]"); } catch (e) { return []; } };
+  /* Historique : on normalise les champs avant tout rendu HTML (une sauvegarde importée peut être forgée). */
+  S.history = function () {
+    let a; try { a = JSON.parse(L.getItem("match_history") || "[]"); } catch (e) { return []; }
+    if (!Array.isArray(a)) return [];
+    const txt = (v, n) => typeof plainText === "function" ? plainText(v, n) : String(v == null ? "" : v).replace(/[&<>"']/g, "").slice(0, n);
+    return a.slice(-30).filter(h => h && typeof h === "object").map(h => ({
+      mode: txt(h.mode, 40),
+      map: txt(h.map, 40),
+      tank: txt(h.tank, 60),
+      result: txt(h.result, 20),
+      score: txt(h.score, 40),
+      kills: Number.isFinite(+h.kills) ? +h.kills : 0,
+      xp: Number.isFinite(+h.xp) ? +h.xp : 0
+    }));
+  };
   S.campaignDone = function (tank) { return new Set((L.getItem("camp_completed_" + tank) || "").split(",").filter(Boolean).map(Number)); };
   S.campaignTotal = () => Object.keys(TECH_TREE).reduce((s, n) => s + S.campaignDone(n).size, 0);
 
@@ -102,8 +116,11 @@ const Store = (function () {
   };
   S.resetAll = function () {
     S.resetResearch();
-    ["XPEarned", "stat_parties", "stat_kills", "stat_deaths", "stat_damage", "stat_shots", "stat_hits", "stat_wins", "stat_maxkills", "match_history", "Credits", "lobbyConfig"].forEach(k => L.removeItem(k));
-    Object.keys(L).filter(k => k.startsWith("claimed_")).forEach(k => L.removeItem(k));
+    const keys = [];
+    for (let i = 0; i < L.length; i++) keys.push(L.key(i));   // localStorage n'est pas énumérable avec Object.keys()
+    keys.filter(k => /^stat_|^claimed_|^researched_|^camp_completed_|^TaDirty$|^TaSyncT$|^TaOwner$/.test(k)
+      || ["XPEarned", "match_history", "Credits", "lobbyConfig", "researchOrient", "customTankDesigns", "customTankActive", "ta_settings_v3", "TaSafe"].includes(k))
+      .forEach(k => L.removeItem(k));
   };
   return S;
 })();
@@ -116,4 +133,4 @@ function tankInfo(name) {
   const p = getTankProfile(name), t = TECH_TREE[name], m = TANK_MODULES[name] || {};
   return { name, p, t, m, nation: NATIONS[p.nation], tier: t.tier, cat: p.catLabel };
 }
-function escHTML(s) { return String(s).replace(/[<>&"]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c])); }
+function escHTML(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }

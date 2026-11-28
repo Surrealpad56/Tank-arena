@@ -22,48 +22,80 @@ const Look = (function () {
                  mix(mix(h31(i + vec3(0,0,1)), h31(i + vec3(1,0,1)), f.x), mix(h31(i + vec3(0,1,1)), h31(i + vec3(1,1,1)), f.x), f.y), f.z); }`;
   const inject = (src, token, add, before) => src.replace(token, before ? add + "\n" + token : token + "\n" + add);
 
+  /* Détail du sol en 3 échelles non commensurables + rotation : supprime la trame à 3,2 m. */
+  const DETAIL_GLSL = `
+    vec2 wp = vUv * detailRep * 3.2;
+    vec2 uvA = wp / 5.3;
+    vec2 uvB = mat2(0.80, -0.60, 0.60, 0.80) * wp / 13.7 + vec2(17.3, 4.1);
+    vec2 uvC = mat2(0.60, -0.80, 0.80, 0.60) * wp / 37.0 + vec2(3.7, 29.1);
+    float dA = texture2D(detailMap, uvA).r;
+    float dB = texture2D(detailMap, uvB).r;
+    float dC = texture2D(detailMap, uvC).r;
+    diffuseColor.rgb *= 1.0 + 0.22 * (dA - 0.5) + 0.16 * (dB - 0.5) + 0.10 * (dC - 0.5);`;
+
   function legacyTerrain(mat, detail, W, H) {
     mat.onBeforeCompile = sh => {
       sh.uniforms.detailMap = { value: detail }; sh.uniforms.detailRep = { value: new T.Vector2(W / 3.2, H / 3.2) };
       sh.fragmentShader = "uniform sampler2D detailMap; uniform vec2 detailRep;\n" + sh.fragmentShader;
-      sh.fragmentShader = sh.fragmentShader.replace("#include <map_fragment>", "#include <map_fragment>\n float dA = texture2D(detailMap, vUv * detailRep).r; float dB = texture2D(detailMap, vUv * detailRep * 0.21).r; diffuseColor.rgb *= (0.62 + 0.42 * dA) * (0.88 + 0.24 * dB);");
+      sh.fragmentShader = sh.fragmentShader.replace("#include <map_fragment>", "#include <map_fragment>\n" + DETAIL_GLSL);
     };
+    mat.customProgramCacheKey = () => "look-terrain-legacy-v2";
     mat.needsUpdate = true;
   }
 
   /* ───── Sol : détail, relief (bump), roche sur les pentes, eau, pluie, neige ───── */
-  function terrain(mat, detail, W, H, vis) {
+  function terrain(mat, detail, W, H, vis, waterCanvas) {
     if (off()) { legacyTerrain(mat, detail, W, H); return; }
     mat.extensions = Object.assign(mat.extensions || {}, { derivatives: true });
     const rock = new T.Color(vis && vis.rock !== undefined ? vis.rock : 0x7b766a);
-    mat.customProgramCacheKey = () => "look-terrain";
+    const wm = !!waterCanvas;
+    mat.customProgramCacheKey = () => "look-terrain-v3-" + (wm ? "mask" : "heur");
     mat.onBeforeCompile = sh => {
-      Object.assign(sh.uniforms, { detailMap: { value: detail }, detailRep: { value: new T.Vector2(W / 3.2, H / 3.2) }, uRock: { value: new T.Vector3(rock.r, rock.g, rock.b) }, uWet: U.wet, uSnow: U.snow, uTime: U.time, uBump: { value: 1.0 } });
+      const u = { detailMap: { value: detail }, detailRep: { value: new T.Vector2(W / 3.2, H / 3.2) }, uRock: { value: new T.Vector3(rock.r, rock.g, rock.b) }, uWet: U.wet, uSnow: U.snow, uTime: U.time, uBump: { value: 1.0 } };
+      let head = "uniform sampler2D detailMap; uniform vec2 detailRep; uniform vec3 uRock; uniform float uWet, uSnow, uTime, uBump; varying float vTUp; varying vec3 vWP;";
+      let watExpr = "smoothstep(0.012, 0.06, diffuseColor.b - max(diffuseColor.r, diffuseColor.g) * 0.92)";
+      let foam = "";
+      if (wm) {
+        const wt = new T.CanvasTexture(waterCanvas);
+        Object.assign(u, { waterMap: { value: wt }, uSkyHi: { value: new T.Color(vis && vis.zenith ? vis.zenith : 0x3a6ea5) }, uSkyLo: { value: new T.Color(vis && vis.horizon ? vis.horizon : 0x9bb8c4) } });
+        head = "uniform sampler2D waterMap; uniform vec3 uSkyHi, uSkyLo;\n" + head;
+        watExpr = "texture2D(waterMap, vUv).r";
+        /* Fresnel + écume de bord : l'eau reflète le ciel, y compris sur les marais verts. */
+        foam = `
+          vec3 V = normalize(vViewPosition);
+          float fres = pow(1.0 - clamp(dot(V, normal), 0.0, 1.0), 5.0);
+          vec3 skyC = mix(uSkyLo, uSkyHi, clamp(vWP.y / 90.0 + 0.25, 0.0, 1.0));
+          diffuseColor.rgb = mix(diffuseColor.rgb, skyC, wat * (0.08 + 0.55 * fres));
+          float wEdge = wat * (1.0 - min(texture2D(waterMap, vUv + vec2(0.002, 0.0)).r, texture2D(waterMap, vUv + vec2(0.0, 0.002)).r));
+          float foamN = vn(vec3(vWP.xz * 2.2, uTime * 0.35));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.86, 0.84), wEdge * smoothstep(0.46, 0.72, foamN) * 0.55);`;
+      }
+      Object.assign(sh.uniforms, u);
       sh.vertexShader = "varying float vTUp; varying vec3 vWP;\n" + sh.vertexShader;
       sh.vertexShader = inject(sh.vertexShader, "#include <beginnormal_vertex>", "vTUp = objectNormal.y;");
       sh.vertexShader = inject(sh.vertexShader, "#include <project_vertex>", "vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-      sh.fragmentShader = "uniform sampler2D detailMap; uniform vec2 detailRep; uniform vec3 uRock; uniform float uWet, uSnow, uTime, uBump; varying float vTUp; varying vec3 vWP;\n" + NOISE + "\n" + sh.fragmentShader;
+      sh.fragmentShader = head + "\n" + NOISE + "\n" + sh.fragmentShader;
       sh.fragmentShader = inject(sh.fragmentShader, "#include <map_fragment>", `
-        float dA = texture2D(detailMap, vUv * detailRep).r; float dB = texture2D(detailMap, vUv * detailRep * 0.21).r;
-        diffuseColor.rgb *= (0.62 + 0.42 * dA) * (0.88 + 0.24 * dB);
+        ${DETAIL_GLSL}
         float rockA = smoothstep(0.80, 0.58, vTUp);
         diffuseColor.rgb = mix(diffuseColor.rgb, uRock * (0.62 + 0.55 * dA), rockA * 0.6);
-        float wat = smoothstep(0.012, 0.06, diffuseColor.b - max(diffuseColor.r, diffuseColor.g) * 0.92);
+        float wat = ${watExpr};
         float wetK = uWet * (1.0 - wat);
         diffuseColor.rgb *= 1.0 - 0.36 * wetK;
         float snA = clamp(uSnow * smoothstep(0.42, 0.85, vTUp) * (0.55 + 0.9 * vn(vWP * 0.31)) * (1.0 - wat), 0.0, 1.0);
         float snowK = smoothstep(0.22, 0.55, snA);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.90, 0.93, 0.97) * (0.9 + 0.1 * dA), snowK);`);
-      sh.fragmentShader = inject(sh.fragmentShader, "#include <roughnessmap_fragment>", "roughnessFactor = mix(roughnessFactor, 0.10, wat); roughnessFactor = mix(roughnessFactor, 0.38, wetK * 0.65); roughnessFactor = mix(roughnessFactor, 0.8, snowK);");
+      sh.fragmentShader = inject(sh.fragmentShader, "#include <roughnessmap_fragment>", "roughnessFactor = mix(roughnessFactor, 0.045, wat); roughnessFactor = mix(roughnessFactor, 0.38, wetK * 0.65); roughnessFactor = mix(roughnessFactor, 0.8, snowK);");
       sh.fragmentShader = inject(sh.fragmentShader, "#include <normal_fragment_maps>", `
-        { float hC = dA * 0.55 + dB * 0.45;
+        { float hC = dA * 0.45 + dB * 0.35 + dC * 0.20;
           float rip = vn(vec3(vWP.xz * 1.3, uTime * 0.7)) * 0.6 + vn(vec3(vWP.xz * 3.7, -uTime * 1.1)) * 0.4;
           hC = mix(hC, rip, wat);
           float fd = exp(-length(vViewPosition) / 85.0) * uBump * (1.0 + wat * 2.5);
           vec3 dpx = dFdx(-vViewPosition), dpy = dFdy(-vViewPosition); float dhx = dFdx(hC), dhy = dFdy(hC);
-          vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx); float det = dot(dpx, r1);
-          vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
-          normal = normalize(abs(det) * normal - fd * 0.9 * grad); }`);
+          vec3 b1 = cross(dpy, normal), b2 = cross(normal, dpx); float det = dot(dpx, b1);
+          vec3 grad = sign(det) * (dhx * b1 + dhy * b2);
+          normal = normalize(abs(det) * normal - fd * 0.9 * grad); }
+        ${foam}`);
     };
     mat.roughness = 0.95; mat.needsUpdate = true;
   }
@@ -156,15 +188,22 @@ const Look = (function () {
 
   /* ───── Herbe : touffes instanciées autour de la caméra, sur les zones vertes du sol ───── */
   const Grass = (function () {
-    let im = null, mask = null, mw = 0, mh = 0, last = null, N = 0, mat = null;
+    let im = null, mask = null, mw = 0, mh = 0, last = null, N = 0, mat = null, geo = null;
     const dummy = new T.Object3D(), col = new T.Color();
     const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+    /* Quatre variantes de touffes dans un atlas : la répétition n'est plus visible. */
     function tex() {
-      const c = document.createElement("canvas"); c.width = 128; c.height = 128; const x = c.getContext("2d");
-      for (let i = 0; i < 16; i++) { const bx = 8 + (i / 15) * 112 + (Math.random() - 0.5) * 8, h = 70 + Math.random() * 54, lean = (Math.random() - 0.5) * 22, w = 3 + Math.random() * 3;
-        const g = x.createLinearGradient(0, 128, 0, 128 - h); g.addColorStop(0, "#5a7a3a"); g.addColorStop(1, "#c8e08a"); x.fillStyle = g;
-        x.beginPath(); x.moveTo(bx - w, 128); x.quadraticCurveTo(bx - w * 0.4 + lean * 0.4, 128 - h * 0.55, bx + lean, 128 - h); x.quadraticCurveTo(bx + w * 0.4 + lean * 0.4, 128 - h * 0.55, bx + w, 128); x.fill(); }
-      const t = new T.CanvasTexture(c); t.anisotropy = 4; return t;
+      const c = document.createElement("canvas"); c.width = 512; c.height = 128; const x = c.getContext("2d");
+      const palettes = [["#4a6a30", "#b9d47c"], ["#5b7c39", "#d3e291"], ["#3f6230", "#a8c877"], ["#6b8138", "#d8df8c"]];
+      for (let v = 0; v < 4; v++) {
+        const ox = v * 128;
+        for (let i = 0; i < 14 + v * 2; i++) {
+          const bx = ox + 6 + (i / (13 + v * 2)) * 116 + (Math.random() - 0.5) * 9, h = 58 + Math.random() * (48 + v * 8), lean = (Math.random() - 0.5) * 26, w = 2.5 + Math.random() * 3.5;
+          const g = x.createLinearGradient(0, 128, 0, 128 - h); g.addColorStop(0, palettes[v][0]); g.addColorStop(1, palettes[v][1]); x.fillStyle = g;
+          x.beginPath(); x.moveTo(bx - w, 128); x.quadraticCurveTo(bx - w * 0.4 + lean * 0.4, 128 - h * 0.55, bx + lean, 128 - h); x.quadraticCurveTo(bx + w * 0.4 + lean * 0.4, 128 - h * 0.55, bx + w, 128); x.fill();
+        }
+      }
+      const t = new T.CanvasTexture(c); t.anisotropy = 8; return t;
     }
     function init(scene, terrainCanvas, q) {
       N = Math.round((q.grass || 0)); if (!N || !terrainCanvas) return;
@@ -173,13 +212,15 @@ const Look = (function () {
       for (let i = 0; i < mw * mh; i++) { mask[i * 3] = d[i * 4]; mask[i * 3 + 1] = d[i * 4 + 1]; mask[i * 3 + 2] = d[i * 4 + 2]; }
       const g1 = new T.PlaneGeometry(1, 1).translate(0, 0.5, 0), g2 = g1.clone().rotateY(Math.PI / 2);
       const pos = new Float32Array([...g1.attributes.position.array, ...g2.attributes.position.array]), uv = new Float32Array([...g1.attributes.uv.array, ...g2.attributes.uv.array]), nor = new Float32Array(pos.length); for (let i = 0; i < nor.length; i += 3) nor[i + 1] = 1;
-      const geo = new T.BufferGeometry(); geo.setAttribute("position", new T.BufferAttribute(pos, 3)); geo.setAttribute("uv", new T.BufferAttribute(uv, 2)); geo.setAttribute("normal", new T.BufferAttribute(nor, 3));
+      geo = new T.BufferGeometry(); geo.setAttribute("position", new T.BufferAttribute(pos, 3)); geo.setAttribute("uv", new T.BufferAttribute(uv, 2)); geo.setAttribute("normal", new T.BufferAttribute(nor, 3));
       geo.setIndex([0, 1, 2, 2, 1, 3, 4, 5, 6, 6, 5, 7]);
+      geo.setAttribute("aVariant", new T.InstancedBufferAttribute(new Float32Array(N), 1));
       mat = new T.MeshStandardMaterial({ map: tex(), alphaTest: 0.45, side: T.DoubleSide, roughness: 0.9, metalness: 0 });
-      mat.customProgramCacheKey = () => "look-grass";
+      mat.customProgramCacheKey = () => "look-grass-atlas4";
       mat.onBeforeCompile = sh => {
         Object.assign(sh.uniforms, { uTime: U.time, uWind: U.wind, uWindK: U.windK, uSnow: U.snow, uWet: U.wet });
-        sh.vertexShader = "uniform float uTime, uWindK; uniform vec2 uWind;\n" + sh.vertexShader;
+        sh.vertexShader = "uniform float uTime, uWindK; uniform vec2 uWind; attribute float aVariant;\n" + sh.vertexShader;
+        sh.vertexShader = inject(sh.vertexShader, "#include <uv_vertex>", "vUv.x = (vUv.x + aVariant) * 0.25;");
         sh.vertexShader = inject(sh.vertexShader, "#include <begin_vertex>", `
           #ifdef USE_INSTANCING
             float ph = instanceMatrix[3].x * 0.9 + instanceMatrix[3].z * 1.3;
@@ -207,12 +248,16 @@ const Look = (function () {
         const jx = (gx + hash(gx, gz) * 0.95) * step, jz = (gz + hash(gz + 7.3, gx - 2.1) * 0.95) * step, d = Math.hypot(jx - cx, jz - cz); if (d > R) continue;
         const px = jx / PX, py = jz / PX; if (px < 30 || py < 30 || px > MAP_WIDTH - 30 || py > MAP_HEIGHT - 30) continue;
         const c = sample(px, py); if (!c) continue; const gr = c[1] > c[0] * 1.07 && c[1] > c[2] * 1.12 && c[1] > 55; if (!gr) continue;
-        const r = hash(gx * 3.7, gz * 1.9); if (r > 0.88) continue;
-        const fade = Math.min(1, (R - d) / 12), s = (0.5 + r * 0.55) * fade;
+        const r = hash(gx * 3.7, gz * 1.9);
+        /* Regroupement par plaques : alternance de touffes denses et de zones plus nues. */
+        const patch = 0.5 + 0.5 * Math.sin(jx * 0.055 + Math.sin(jz * 0.043) * 2.1 + 0.7);
+        if (hash(gx * 0.31 + 3.1, gz * 0.27 - 5.4) > 0.24 + 0.76 * patch) continue;
+        const fade = Math.min(1, (R - d) / 12), s = (0.44 + r * 0.5 + patch * 0.34) * fade;
         dummy.position.set(jx, gh(jx, jz) - 0.02, jz); dummy.rotation.set(0, hash(gz, gx) * 6.283, 0); dummy.scale.set(s * 1.1, s * 0.85, s * 1.1); dummy.updateMatrix(); im.setMatrixAt(n, dummy.matrix);
+        geo.attributes.aVariant.setX(n, Math.floor(hash(gx * 1.7 + 11, gz * 2.3 - 7) * 4));
         col.setRGB(c[0] / 255 * 1.25 + 0.04, c[1] / 255 * 1.3 + 0.06, c[2] / 255 * 1.1); im.setColorAt(n, col); n++;
       }
-      im.count = n; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.count = n; im.instanceMatrix.needsUpdate = true; geo.attributes.aVariant.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
     }
     return { init, update, get count() { return im ? im.count : 0; } };
   })();
@@ -235,7 +280,7 @@ const Look = (function () {
         transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3, fog: false,
         uniforms: { map: { value: pattern() }, uCol: { value: tint } },
         vertexShader: "attribute float aAlpha; varying vec2 vUv; varying float vA; void main(){ vUv = uv; vA = aAlpha; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }",
-        fragmentShader: "uniform sampler2D map; uniform vec3 uCol; varying vec2 vUv; varying float vA; void main(){ float k = texture2D(map, vUv).r; gl_FragColor = vec4(uCol, k * vA); }"
+        fragmentShader: "uniform sampler2D map; uniform vec3 uCol; varying vec2 vUv; varying float vA; void main(){ float k = texture2D(map, vUv).r; gl_FragColor = vec4(uCol, k * vA); gl_FragColor = linearToOutputTexel( gl_FragColor ); }"
       });
       im = new T.InstancedMesh(geo, mat, MAX); im.frustumCulled = false; im.renderOrder = 2;
       dummy.scale.set(0, 0, 0); dummy.updateMatrix(); for (let i = 0; i < MAX; i++) im.setMatrixAt(i, dummy.matrix);

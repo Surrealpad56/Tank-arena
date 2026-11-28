@@ -1,8 +1,0 @@
-ARBRE DE RECHERCHE — CORRECTION DE DISPOSITION
-
-- Une seule nation est affichée à la fois.
-- Les rangs I à XII sont maintenant des colonnes horizontales de gauche à droite.
-- Les catégories sont maintenant des lignes horizontales distinctes, empilées verticalement : chars légers, moyens, lourds, chars de combat principaux et chasseurs de chars légers/moyens/lourds.
-- Le tableau des rangs peut défiler horizontalement. Les balayages sur la barre de nation et les boutons changent la nation, afin de ne pas confondre le défilement des rangs avec le changement de nation.
-- Les prérequis sont reliés par des lignes SVG lorsque le véhicule précédent est visible dans l’arbre de la nation actuelle.
-- Transition directionnelle renforcée lors du changement de nation.

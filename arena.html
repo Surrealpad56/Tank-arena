@@ -2,6 +2,9 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <script>/* diagnostic : signale un fichier du jeu qui n'a pas pu être chargé */
     (function () { var miss = [];
       addEventListener("error", function (e) { var t = e.target; if (!t || (t.tagName !== "SCRIPT" && t.tagName !== "LINK")) return; miss.push((t.src || t.href || "").split("/").slice(3).join("/")); if (miss.length === 1) setTimeout(show, 600); }, true);
@@ -30,6 +33,10 @@
         <div id="sc-mid"><span id="sc-mode" class="disp">—</span><span id="sc-obj" class="num">—</span></div>
         <div class="team b"><b id="sc-b" class="num">0</b><span class="tl disp">Ennemis</span></div>
       </div>
+      <!-- Dégâts infligés aux ennemis : compact, lisible, différencié des dégâts subis -->
+      <div id="dmg-out" class="cut">
+        <span class="dmg-out-label">🎯</span><span id="dmg-out-val" class="num">0 dmg · 0 pen · 0 destr</span>
+      </div>
       <canvas id="compass" width="520" height="34"></canvas>
     </div>
 
@@ -45,7 +52,7 @@
     <!-- Viseur -->
     <div id="reticle">
       <div id="aim" class="neutral"><i></i><i></i><i></i><i></i></div>
-      <div id="range" class="num disp"></div>
+      <div id="range" class="num disp" title="Distance du point désigné par la caméra (ligne de vue)"></div>
       <div id="penetration" class="penetration hidden"></div>
       <div id="target-info"></div>
     </div>
@@ -53,7 +60,7 @@
       <div id="scope-lens"></div>
       <svg id="scope-ret" xmlns="http://www.w3.org/2000/svg"></svg>
       <div id="scope-info">
-        <div><span>Distance</span><b id="sc-dist">—</b></div>
+        <div><span>Visée</span><b id="sc-dist">—</b></div>
         <div><span>Élévation</span><b id="sc-el">0.0°</b></div>
         <div><span>Munition</span><b id="sc-ammo">—</b></div>
         <div><span>Zoom</span><b id="sc-zoom">×1</b></div>
@@ -69,34 +76,36 @@
       <div id="veh-head">
         <span id="veh-name" class="disp">—</span>
         <span id="veh-cat" class="disp">—</span>
+        <button id="b-panel-veh" class="hud-fold" title="Réduire / afficher les panneaux (N)" aria-label="Réduire les panneaux">–</button>
       </div>
-      <div id="veh-body">
-        <canvas id="orient" width="120" height="120"></canvas>
-        <div id="veh-stats">
-          <div class="spd"><b id="spd" class="num">0</b><span>km/h</span></div>
-          <div class="gear disp">Rapport <b id="gear" class="num">N</b></div>
-          <div id="eng-bar"><i id="eng-fill"></i></div>
-          <div id="mods">
-            <span id="m-engine" title="Moteur">MOT</span>
-            <span id="m-canon" title="Canon">CAN</span>
-            <span id="m-trackL" title="Chenille gauche">CHG</span>
-            <span id="m-trackR" title="Chenille droite">CHD</span>
-          </div>
-          <div id="crew" title="Équipage"></div>
+      <div id="veh-body" class="veh-body">
+        <canvas id="veh-view" width="100" height="100"></canvas>
+        <div id="veh-lights">
+          <div class="light" id="light-move" title="Avancer / Reculer"><div class="light-dot"></div><span class="light-label">AVANCER</span></div>
+          <div class="light" id="light-fire" title="Tirer"><div class="light-dot"></div><span class="light-label">TIRER</span></div>
+          <div class="light" id="light-reload" title="Recharger"><div class="light-dot"></div><span class="light-label">RECHARGER</span></div>
+          <div class="light" id="light-turret" title="Tourner la tourelle"><div class="light-dot"></div><span class="light-label">TOURELLE</span></div>
+          <div class="light" id="light-fireout" title="Incendie"><div class="light-dot"></div><span class="light-label">INCENDIE</span></div>
         </div>
       </div>
     </div>
 
-    <!-- État des modules (vue de dessus) -->
-    <div id="dmg" class="cut">
-      <div class="dh disp"><span>Modules</span><span id="dmg-sum" class="num"></span></div>
-      <div class="db"><canvas id="dmg-cv" width="150" height="150"></canvas><div id="dmg-chips"></div></div>
-    </div>
 
-    <!-- Rapport du dernier impact -->
-    <div id="rep" class="cut hidden">
-      <div class="dh disp"><span id="rep-title">—</span><span id="rep-sub" class="num"></span></div>
-      <div class="db"><canvas id="rep-cv" width="150" height="150"></canvas><ul id="rep-list"></ul></div>
+
+    <!-- ───── DÉGÂTS INFLIGÉS (vos tirs) ───── -->
+    <div id="rep" class="cut">
+      <div class="dh disp">
+        <span>TIRS INFLIGÉS</span>
+        <span id="rep-stats" class="num">0 dmg · 0 pen · 0 destr</span>
+        <button id="b-panel-rep" class="hud-fold" title="Réduire / afficher (N)" aria-label="Réduire les panneaux">–</button>
+      </div>
+      <div class="db">
+        <canvas id="rep-cv" width="170" height="170"></canvas>
+        <div>
+          <ul id="rep-hits"></ul>
+          <ul id="rep-list" style="display:none;position:absolute;top:40px;left:0;right:0;background:var(--panel);border:1px solid var(--line);z-index:4;padding:8px;max-height:180px;overflow:auto;"></ul>
+        </div>
+      </div>
     </div>
 
     <!-- Munitions -->
@@ -178,7 +187,7 @@
   <script src="js/arena-world.js"></script>
   <script src="js/arena-fx.js"></script>
   <script src="js/arena-damage.js"></script>
-  <script src="js/arena-hud.js"></script>
+  <script src="js/arena-hud.js?v=20261128"></script>
   <script src="js/arena-entities.js"></script>
   <script src="js/arena-camera.js"></script>
   <script src="js/arena-combat.js"></script>

@@ -115,7 +115,11 @@ function frame(now) {
   }
   Cam.update(dt, S.camera);
   Cam.computeAim();
-  if (!localTank.destroyed) localTank.aimTarget = Cam.aim;
+  if (!localTank.destroyed) {
+    localTank.aimTarget = Cam.aim;
+    // Trajectoire réelle pour l'indicateur PEN/BLOQ (calcul coûteux, 8 Hz suffisent).
+    if (!frame._pred || now - frame._pred > 125) { frame._pred = now; Cam.predictImpact(); }
+  } else if (Cam.impact) { Cam.impact.valid = false; }
   World.update(_time, localTank.view.root.position);
   FX.update(live ? dt : 0); Dmg.update(live ? dt : 0);
   updateEngineSound(Math.abs(localTank.speed) / (PIXELS_PER_METER * TICK_RATE));

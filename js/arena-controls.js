@@ -10,6 +10,9 @@ const Game = { paused: true, started: false, canvas: null };
 
 function setPaused(p) {
   if (p === Game.paused) return;
+  // En ligne, une pause locale laisserait le char immobile dans une simulation qui continue :
+  // on interdit la pause pendant une partie multijoueur.
+  if (p && typeof Net !== "undefined" && Net.on) return;
   Game.paused = p; HUD.showPause(p);
   if (p) { Input.fire = false; if (document.pointerLockElement) document.exitPointerLock(); }
 }
@@ -17,6 +20,19 @@ function lockPointer() { if (mobileMode) return; try { const r = Game.canvas.req
 
 function setupControls(canvas) {
   Game.canvas = canvas;
+  /* Repli des panneaux Véhicule / Modules : touche N ou clic sur les petits boutons du HUD. */
+  const foldPanels = () => {
+    const on = document.body.classList.toggle("hud-compact");
+    try { Settings.set("hudCompact", on); } catch (e) { }
+    for (const id of ["b-panel-veh", "b-panel-dmg"]) { const b = document.getElementById(id); if (b) b.textContent = on ? "+" : "–"; }
+  };
+  try {
+    if (Settings.get("hudCompact")) {
+      document.body.classList.add("hud-compact");
+      for (const id of ["b-panel-veh", "b-panel-dmg"]) { const b = document.getElementById(id); if (b) b.textContent = "+"; }
+    }
+  } catch (e) { }
+  for (const id of ["b-panel-veh", "b-panel-dmg"]) { const b = document.getElementById(id); if (b) b.onclick = foldPanels; }
   const setKey = (code, v) => {
     switch (code) {
       case "KeyW": case "ArrowUp": Input.up = v; break;
@@ -31,6 +47,7 @@ function setupControls(canvas) {
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     if (e.code === "Escape" || e.code === "KeyH") { if (!gameOver && Game.started) { if (e.code === "KeyH" || !document.pointerLockElement) setPaused(!Game.paused); if (e.code === "KeyH" && Game.paused) HUD.showPause(true); } return; }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
+    if (e.code === "KeyN" && Game.started && !e.repeat) { foldPanels(); return; }
     if (Game.paused) return;
     setKey(e.code, true);
     if (e.repeat) return;

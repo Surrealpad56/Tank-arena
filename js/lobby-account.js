@@ -65,7 +65,7 @@ const SecCompte = (function () {
     let h = "";
     if (f.incoming.length) h += `<h4 style="margin:6px 0">Demandes reçues</h4>` + f.incoming.map(n => `<div class="sl-pl"><b>${E(n)}</b><span style="margin-left:auto;display:flex;gap:6px"><button class="btn sm" data-a="fresp" data-n="${E(n)}" data-v="1">Accepter</button><button class="btn sm" data-a="fresp" data-n="${E(n)}" data-v="0">Refuser</button></span></div>`).join("");
     h += `<h4 style="margin:10px 0 6px">Mes amis</h4>` + (f.friends.map(x => {
-      const r = x.room, canJoin = r && !r.full && (r.state === "lobby" || true);
+      const r = x.room, canJoin = r && !r.full && (r.state === "lobby" || (r.state === "playing" && r.late));
       return `<div class="sl-pl"><span class="sl-dot ${x.online ? "" : "off"}"></span><b>${E(x.name)}</b><small>${x.online ? E(x.where) + (r ? " · " + E(r.name) : "") : "hors ligne"}</small>${canJoin ? `<button class="btn sm" data-a="fjoin" data-id="${E(r.id)}" data-l="${r.locked ? 1 : 0}" data-rn="${E(r.name)}">Rejoindre</button>` : ""}<button class="sl-x" data-a="frem" data-n="${E(x.name)}" title="Retirer">✕</button></div>`;
     }).join("") || `<div class="muted">Aucun ami pour l'instant : ajoutez-en avec leur pseudo.</div>`);
     if (f.outgoing.length) h += `<h4 style="margin:10px 0 6px">Demandes envoyées</h4>` + f.outgoing.map(n => `<div class="sl-pl"><b>${E(n)}</b><small>en attente</small></div>`).join("");

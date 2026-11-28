@@ -251,10 +251,10 @@ const Dmg = (function () {
   }
   function kindOf(shell) {
     const t = shell.type;
-    const fuzeArmed = shell.hasFuze === true || shell.fuze === true;
+    const fuze = shell.hasFuze === undefined ? (shell.fuze === true) : (shell.hasFuze === true);
     if (t === "HEAT") return "heat"; if (t === "HE" || t === "shrapnel") return "he";
-    if ((t === "APHE" || t === "APCBC" || t === "APBC") && fuzeArmed) return "aphe";
-    if (t === "APHE" && shell.hasFuze !== false && !fuzeArmed) return "aphe";
+    if (t === "APHE") return fuze ? "aphe" : "solid";
+    if ((t === "APCBC" || t === "APBC") && fuze) return "aphe";
     return "solid";
   }
 
@@ -345,15 +345,24 @@ const Dmg = (function () {
     const I = tank.int; if (!I) return; const M = I.byId;
     for (const m of I.mods) if (m.kind === "crew") tank.modules.crew[m.role] = m.hp > 0;
     const driverOk = !M.driver || M.driver.hp > 0;
+
+    // — Tir : culasse détruite = plus de tir du tout
     tank.modules.canon = M.breech.hp > 0;
-    I.reloadMult = 1 + (1 - M.breech.hp) * 0.8;
+
+    // — Rechargement : chargeur détruit = plus de rechargement du tout
+    if (M.loader && M.loader.hp <= 0) I.reloadMult = 0;
+    else if (M.loader && M.loader.hp < 1) I.reloadMult = 1 + (1 - M.loader.hp) * 0.6;
+    else I.reloadMult = 1 + (1 - M.breech.hp) * 0.8;
+
+    // — Propulsion : moteur OU transmission détruit = plus d'avancement
     const eng = M.engine.hp, tr = M.trans.hp;
-    tank.engineHealth = tr <= 0 ? 0 : Math.round(100 * Math.min(eng, 0.3 + 0.7 * tr));
+    tank.engineHealth = (eng <= 0 || tr <= 0) ? 0 : Math.round(100 * Math.min(eng, 0.3 + 0.7 * tr));
     tank.modules.engine = driverOk && eng > 0 && tr > 0;
     if (!driverOk) tank.engineHealth = 0;
-    const ringMult = M.ring.hp <= 0 ? 0.2 : M.ring.hp < 1 ? 0.6 : 1;
-    tank.turretSpeedMult = (M.gunner.hp > 0 ? 1 : 0.15) * ringMult * (M.gunner.hp > 0 ? 0.65 + 0.35 * M.gunner.hp : 1);
-    if (M.loader && M.loader.hp > 0 && M.loader.hp < 1) I.reloadMult += (1 - M.loader.hp) * 0.6;   // chargeur blessé : rechargement plus lent
+
+    // — Tourelle : bague détruite = plus de rotation
+    const ringMult = M.ring.hp <= 0 ? 0 : M.ring.hp < 1 ? 0.3 : 1;
+    tank.turretSpeedMult = (M.gunner.hp > 0 ? 1 : 0) * ringMult * (M.gunner.hp > 0 ? 0.65 + 0.35 * M.gunner.hp : 1);
   };
   D.crewAlive = tank => tank.int.mods.filter(m => m.kind === "crew" && m.hp > 0).length;
   D.crewTotal = tank => tank.int.mods.filter(m => m.kind === "crew").length;
@@ -433,7 +442,14 @@ const Dmg = (function () {
   };
   D.hideXray = function (tank) {
     const x = tank.int && tank.int.xray; if (!x) return;
-    World.S.scene.remove(x.root); x.items.forEach(i => { i.mesh.material.dispose(); i.mesh.children[0].geometry.dispose(); i.mesh.children[0].material.dispose(); }); tank.int.xray = null;
+    World.S.scene.remove(x.root);
+    x.items.forEach(i => {
+      // EdgesGeometry est construite à partir de base : il faut libérer les deux géométries.
+      const edge = i.mesh.children && i.mesh.children[0];
+      if (edge) { edge.geometry.dispose(); edge.material.dispose(); }
+      i.mesh.geometry.dispose(); i.mesh.material.dispose();
+    });
+    tank.int.xray = null;
   };
   D.update = function (dt) {
     for (let i = tr.length - 1; i >= 0; i--) { const t = tr[i]; t.life -= dt; t.ln.material.opacity = clamp(t.life / 1.2, 0, 1); if (t.life <= 0) { World.S.scene.remove(t.ln); t.ln.geometry.dispose(); t.ln.material.dispose(); tr.splice(i, 1); } }
@@ -452,37 +468,65 @@ const Dmg = (function () {
     const P = tank.profile, I = tank.int; if (!I) return;
     const s = Math.min((w - 10) / (P.W + 0.8), (h - 16) / (P.L + 0.8)), cx = w / 2, cy = h / 2;
     const X = (lz) => cx + lz * s, Y = (lx) => cy - lx * s;
-    // chenilles + caisse
-    ctx.lineWidth = 1.2; ctx.strokeStyle = COL.line; ctx.fillStyle = "rgba(255,255,255,.06)";
-    const tw = Math.min(0.5, P.W * 0.16);
-    for (const sg of [-1, 1]) { ctx.beginPath(); ctx.rect(X(sg * (P.W / 2 + tw * 0.2) - tw / 2), Y(P.L / 2), tw * s, P.L * s); ctx.fill(); ctx.stroke(); }
-    ctx.beginPath(); ctx.rect(X(-P.W / 2 + tw * 0.4), Y(P.L / 2), (P.W - tw * 0.8) * s, P.L * s); ctx.fill(); ctx.stroke();
-    if (!tank.modules.trackLeft) { ctx.strokeStyle = COL.dead; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(X(-P.W / 2 - tw * 0.2), Y(P.L / 2)); ctx.lineTo(X(-P.W / 2 - tw * 0.2), Y(-P.L / 2)); ctx.stroke(); }
-    if (!tank.modules.trackRight) { ctx.strokeStyle = COL.dead; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(X(P.W / 2 + tw * 0.2), Y(P.L / 2)); ctx.lineTo(X(P.W / 2 + tw * 0.2), Y(-P.L / 2)); ctx.stroke(); }
+    /* Silhouette du char en fond (très sombre, transparente) */
+    ctx.fillStyle = "rgba(11,15,18,.35)";
+    ctx.strokeStyle = "rgba(255,255,255,.12)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.rect(X(-P.W / 2), Y(P.L / 2), P.W * s, P.L * s);
+    ctx.fill(); ctx.stroke();
+    // tourelle de fond (masse, non tournée)
+    const tuBg = P.tu;
+    ctx.beginPath();
+    ctx.rect(X(-tuBg.w / 2), Y(P.L / 2 - tuBg.l * 0.4), tuBg.w * s, tuBg.l * s);
+    ctx.fill(); ctx.stroke();
+
+    const COL_OK = "rgba(95,211,138,.16)";      // vert transparent (intact)
+    const COL_DMG = "rgba(255,176,0,.75)";     // jaune (endommagé)
+    const COL_DEAD_FILL = "rgba(0,0,0,.45)";   // fond noir léger (détruit)
+    const COL_DEAD = "rgba(255,90,68,.95)";    // rouge (détruit)
+    const COL_LINE = "rgba(0,0,0,.85)";        // contour noir
+
+    const moduleColor = (m) => {
+      if (m.hp <= 0) return { fill: COL_DEAD_FILL, stroke: COL_LINE, alpha: 1, lw: 2 };
+      if (m.hp < 0.999) return { fill: COL_DMG, stroke: COL_LINE, alpha: 0.85, lw: 1.5 };
+      return { fill: COL_OK, stroke: "rgba(0,0,0,.35)", alpha: 0.85, lw: 1 };
+    };
     const box = (m, tx, tz, rot) => {
-      const c = m.hp <= 0 ? COL.dead : m.hp < 0.999 ? COL.dmg : COL.ok;
+      const mc = moduleColor(m);
       ctx.save(); ctx.translate(X(tz), Y(tx)); if (rot) ctx.rotate(rot);
       const shape = m.shape || "box";
-      if (m.kind === "crew") {
-        if (m.parts) {
-          ctx.globalAlpha = m.hp > 0 ? 0.9 : 0.55; ctx.fillStyle = c; ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.lineWidth = 1;
-          for (const pt of m.parts) {
-            const px = (pt.c[2] - m.c[2]) * s, py = -(pt.c[0] - m.c[0]) * s, hw = Math.max(1.2, pt.h[2] * s), hl = Math.max(1.2, pt.h[0] * s);
-            if (pt.n === "head") { ctx.beginPath(); ctx.arc(px, py, Math.max(2.2, pt.h[2] * s), 0, 6.283); ctx.fill(); ctx.stroke(); }
-            else { ctx.fillRect(px - hw, py - hl, hw * 2, hl * 2); ctx.strokeRect(px - hw, py - hl, hw * 2, hl * 2); }
+      if (m.kind === "crew" && m.parts) {
+        ctx.globalAlpha = mc.alpha;
+        for (const pt of m.parts) {
+          const px = (pt.c[2] - m.c[2]) * s, py = -(pt.c[0] - m.c[0]) * s, hw = Math.max(1.4, pt.h[2] * s), hl = Math.max(1.4, pt.h[0] * s);
+          if (m.hp <= 0) {
+            ctx.fillStyle = COL_DEAD_FILL; ctx.fillRect(px - hw, py - hl, hw * 2, hl * 2);
+            ctx.strokeStyle = COL_LINE; ctx.lineWidth = mc.lw; ctx.strokeRect(px - hw, py - hl, hw * 2, hl * 2);
+            ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.moveTo(px - hw, py - hl); ctx.lineTo(px + hw, py + hl); ctx.moveTo(px + hw, py - hl); ctx.lineTo(px - hw, py + hl); ctx.stroke();
+          } else if (m.hp < 0.999) {
+            ctx.fillStyle = COL_DMG; ctx.fillRect(px - hw, py - hl, hw * 2, hl * 2);
+            ctx.strokeStyle = COL_LINE; ctx.lineWidth = mc.lw; ctx.strokeRect(px - hw, py - hl, hw * 2, hl * 2);
+          } else {
+            ctx.fillStyle = COL_OK; ctx.fillRect(px - hw, py - hl, hw * 2, hl * 2);
+            ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 1; ctx.strokeRect(px - hw, py - hl, hw * 2, hl * 2);
           }
-          ctx.globalAlpha = 1; ctx.fillStyle = "#0b0f12"; ctx.font = "700 9px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(m.hp > 0 ? m.role[0].toUpperCase() : "✕", 0, 0.5);
-        } else {
-        ctx.beginPath(); ctx.arc(0, 0, Math.max(3.5, 0.26 * s), 0, 6.283); ctx.fillStyle = c; ctx.globalAlpha = m.hp > 0 ? 0.9 : 0.55; ctx.fill(); ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.stroke(); ctx.fillStyle = "#0b0f12"; ctx.font = "700 9px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(m.hp > 0 ? m.role[0].toUpperCase() : "✕", 0, 0.5);
+          ctx.fillStyle = "#0b0f12"; ctx.font = "700 8px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(m.hp > 0 ? m.role[0].toUpperCase() : "✕", px, py);
         }
       } else if (shape === "cylinder") {
         const r = Math.max(3.2, (m.h[2] || 0.24) * s * 1.2);
-        ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.6, 0, 0, 6.283); ctx.fillStyle = c; ctx.globalAlpha = 0.8; ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(0,0,0,.5)"; ctx.stroke();
+        ctx.fillStyle = mc.fill; ctx.globalAlpha = mc.alpha; ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.6, 0, 0, 6.283); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = mc.stroke; ctx.lineWidth = mc.lw; ctx.stroke();
       } else if (shape === "ring") {
         const r = Math.max(4, (m.h[0] || 0.32) * s * 1.5);
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = mc.stroke; ctx.lineWidth = mc.lw; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.stroke();
+        if (m.hp <= 0) { ctx.fillStyle = COL_DEAD_FILL; ctx.beginPath(); ctx.arc(0, 0, r * 0.55, 0, 6.283); ctx.fill(); }
       } else {
-        const bw = m.h[2] * 2, bl = m.h[0] * 2; ctx.globalAlpha = 0.7; ctx.fillStyle = c; ctx.fillRect(-bw * s / 2, -bl * s / 2, bw * s, bl * s); ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.strokeStyle = m.hp <= 0 ? COL.dead : "rgba(0,0,0,.5)"; ctx.strokeRect(-bw * s / 2, -bl * s / 2, bw * s, bl * s); if (m.hp <= 0) { ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.moveTo(-bw * s / 2, -bl * s / 2); ctx.lineTo(bw * s / 2, bl * s / 2); ctx.moveTo(bw * s / 2, -bl * s / 2); ctx.lineTo(-bw * s / 2, bl * s / 2); ctx.stroke(); }
+        const bw = m.h[2] * 2, bl = m.h[0] * 2;
+        ctx.fillStyle = mc.fill; ctx.globalAlpha = mc.alpha; ctx.fillRect(-bw * s / 2, -bl * s / 2, bw * s, bl * s); ctx.globalAlpha = 1;
+        ctx.strokeStyle = mc.stroke; ctx.lineWidth = mc.lw; ctx.strokeRect(-bw * s / 2, -bl * s / 2, bw * s, bl * s);
+        if (m.hp <= 0) {
+          ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.moveTo(-bw * s / 2, -bl * s / 2); ctx.lineTo(bw * s / 2, bl * s / 2); ctx.moveTo(bw * s / 2, -bl * s / 2); ctx.lineTo(-bw * s / 2, bl * s / 2); ctx.stroke();
+        }
       }
       ctx.restore();
     };
@@ -491,8 +535,8 @@ const Dmg = (function () {
     const ry = relYawOf(tank), tu = P.tu, cr = Math.cos(ry), sr = Math.sin(ry);
     const tcx = P.pivotX + (tu.x - P.pivotX) * cr, tcz = (tu.x - P.pivotX) * sr;
     ctx.save(); ctx.translate(X(tcz), Y(tcx)); ctx.rotate(ry);
-    ctx.fillStyle = "rgba(255,255,255,.07)"; ctx.strokeStyle = COL.line; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.rect(-tu.w * s / 2, -tu.l * s / 2, tu.w * s, tu.l * s); ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = Math.max(2, 0.12 * s); ctx.beginPath(); ctx.moveTo(0, -tu.l * s / 2); ctx.lineTo(0, -(tu.l / 2 + Math.max(P.gunLen * 0.55, 1)) * s); ctx.stroke();
+    ctx.fillStyle = "rgba(11,15,18,.45)"; ctx.strokeStyle = "rgba(255,255,255,.2)"; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.rect(-tu.w * s / 2, -tu.l * s / 2, tu.w * s, tu.l * s); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = Math.max(2, 0.12 * s); ctx.beginPath(); ctx.moveTo(0, -tu.l * s / 2); ctx.lineTo(0, -(tu.l / 2 + Math.max(P.gunLen * 0.55, 1)) * s); ctx.stroke();
     ctx.restore();
     for (const m of I.mods) if (m.frame === "t") {
       const u = m.c[0] + (tu.x - P.pivotX), px = P.pivotX + u * cr - m.c[2] * sr, pz = u * sr + m.c[2] * cr; box(m, px, pz, ry);

@@ -10,7 +10,7 @@ console.log("[TankArena] chargement : arena-world.js");
 const THEME_VIS = Object.fromEntries(Object.keys(MAPS).map(k => [k, MAPS[k].vis]));
 
 const World = (function () {
-  const W = MAP_WIDTH * PX, H = MAP_HEIGHT * PX;      // 444 × 472 m
+  const W = MAP_WIDTH * PX, H = MAP_HEIGHT * PX;      // ~667 × 667 m (12000 px ÷ 18 px/m)
   const S = {
     renderer: null, scene: null, camera: null, sun: null, sky: null, terrain: null, terrainCanvas: null,
     quality: null, vis: Weather.vis(THEME_VIS[MAP_THEME]), treeChunks: [], capture: [], dynamicLights: [], ready: false
@@ -90,8 +90,15 @@ const World = (function () {
       fragmentShader: `varying vec3 vP; uniform vec3 zenith, horizon, sunDir, sunCol;
         void main(){ float h = clamp(vP.y, 0.0, 1.0); vec3 c = mix(horizon, zenith, pow(h, 0.55));
           if (vP.y < 0.0) c = horizon * 0.92;
+          /* Brume atmosphérique : bande d'haze à l'horizon, surtout visible sur les grandes cartes. */
+          c = mix(c, horizon, pow(1.0 - abs(vP.y), 9.0) * 0.32);
           float s = max(dot(vP, sunDir), 0.0); c += sunCol * (pow(s, 600.0) * 1.4 + pow(s, 12.0) * 0.18);
-          gl_FragColor = vec4(c, 1.0); }`
+          /* Lune : disque net, visible même quand l'orage masque les étoiles. */
+          float mo = max(dot(vP, normalize(vec3(0.45, 0.55, -0.70))), 0.0);
+          c += vec3(0.85, 0.90, 1.0) * pow(mo, 1800.0) * 0.9;
+          gl_FragColor = vec4(c, 1.0);
+          #include <encodings_fragment>
+        }`
     });
     const m = new THREE.Mesh(geo, mat); m.renderOrder = -10; m.frustumCulled = false;
     return m;
@@ -102,11 +109,11 @@ const World = (function () {
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = 8;
     tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
-    const detail = detailTexture(); detail.repeat.set(1, 1);
+    const detail = detailTexture(); detail.repeat.set(1, 1); detail.anisotropy = 8;
     const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 });
-    Look.terrain(mat, detail, W, H, S.vis);        // relief, eau, roche, pluie, neige (arena-look.js)
-    /* maillage déformé par la grille de hauteurs de la carte (une case = 32 px = 1,8 m) */
-    const Lr = MAP_LAYOUT, st = 2, cs = Lr.CS * st, nx = Math.ceil(MAP_WIDTH / cs), nz = Math.ceil(MAP_HEIGHT / cs), vx = nx + 1, vz = nz + 1;
+    Look.terrain(mat, detail, W, H, S.vis, canvas._waterMask);   // relief, eau, roche, pluie, neige (arena-look.js)
+    /* maillage déformé par la grille de hauteurs de la carte (une case = 32 px = 1,8 m, pas de saut) */
+    const Lr = MAP_LAYOUT, st = 1, cs = Lr.CS * st, nx = Math.ceil(MAP_WIDTH / cs), nz = Math.ceil(MAP_HEIGHT / cs), vx = nx + 1, vz = nz + 1;
     const pos = new Float32Array(vx * vz * 3), uv = new Float32Array(vx * vz * 2), idx = new Uint32Array(nx * nz * 6);
     for (let j = 0; j < vz; j++) for (let i = 0; i < vx; i++) {
       const k = j * vx + i, x = Math.min(i * cs, MAP_WIDTH), y = Math.min(j * cs, MAP_HEIGHT);
@@ -298,7 +305,7 @@ const World = (function () {
       });
       im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
       im.frustumCulled = false;
-      im.castShadow = (Settings.get("quality") === "ultra");
+      im.castShadow = (Settings.get("quality") === "ultra" || Settings.get("quality") === "high");
       const cxm = ((bi % cols) + 0.5) * CH * PX, czm = (Math.floor(bi / cols) + 0.5) * CH * PX;
       im.userData.center = new THREE.Vector3(cxm, 3, czm); im.userData.radius = CH * PX * 0.75;
       scene.add(im); S.treeChunks.push(im);
@@ -320,10 +327,12 @@ const World = (function () {
     for (const cp of CAPTURE_POINTS) {
       const g = new THREE.Group(); g.position.set(cp.x * PX, groundH(cp.x, cp.y) * PX + 0.06, cp.y * PX);
       const r = cp.radius * PX;
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, depthWrite: false }));
-      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.35, r, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false }));
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 38, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
-      beam.position.y = 19;
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06, depthWrite: false }));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.35, r, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false }));
+      /* Faisceau haut et discret, dégradé vers le haut : plus de trait blanc additif dans le ciel. */
+      const fadeTex = canvasTex(8, 128, (c, w, h) => { const g = c.createLinearGradient(0, h, 0, 0); g.addColorStop(0, "rgba(255,255,255,0.55)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); });
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 20, 12, 1, true), new THREE.MeshBasicMaterial({ map: fadeTex, color: 0xffffff, transparent: true, opacity: 0.05, side: THREE.FrontSide, depthWrite: false }));
+      beam.position.y = 10;
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 7, 6), new THREE.MeshStandardMaterial({ color: 0x2a2d30 }));
       pole.position.y = 3.5;
       const flagMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
@@ -334,13 +343,13 @@ const World = (function () {
       S.capture.push({ cp, g, disc, ring, beam, flag, flagMat, progMesh: null, lastProg: 99, lastOwner: "?", r });
     }
   }
-  const CAP_COL = { A: 0x4db4ff, B: 0xff5a44, N: 0xffffff, C: 0xffc83a };
+  const CAP_COL = { A: 0x4db4ff, B: 0xff5a44, N: 0xaeb8b4, C: 0xffc83a };
   function updateCapture(time) {
     for (const c of S.capture) {
       const cp = c.cp, col = cp.contested ? CAP_COL.C : cp.owner === "A" ? CAP_COL.A : cp.owner === "B" ? CAP_COL.B : CAP_COL.N;
       for (const m of [c.disc, c.ring, c.beam, c.flag]) m.material.color.setHex(col);
       c.flag.rotation.y = Math.sin(time * 2.2) * 0.25;
-      c.beam.material.opacity = cp.contested ? 0.1 + 0.08 * Math.sin(time * 9) : 0.08;
+      c.beam.material.opacity = cp.contested ? 0.045 + 0.02 * Math.sin(time * 9) : 0.03;
       const pk = Math.round(cp.progress * 80);
       if (pk !== c.lastProg) {
         c.lastProg = pk;
@@ -348,7 +357,7 @@ const World = (function () {
         if (Math.abs(cp.progress) > 0.015 && Math.abs(cp.progress) < 0.999) {
           const th = Math.abs(cp.progress) * Math.PI * 2;
           const geo = new THREE.RingGeometry(c.r - 1.4, c.r - 0.45, 64, 1, 0, th).rotateX(-Math.PI / 2);
-          c.progMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: cp.progress > 0 ? CAP_COL.A : CAP_COL.B, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+          c.progMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: cp.progress > 0 ? CAP_COL.A : CAP_COL.B, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
           c.progMesh.position.y = 0.02; c.g.add(c.progMesh);
         }
       }
@@ -369,15 +378,18 @@ const World = (function () {
     const q = Settings.quality(); S.quality = q;
     const postWanted = !!q.post && Settings.get("post") !== false;
     const rend = new THREE.WebGLRenderer({ canvas, antialias: q.antialias && !postWanted, powerPreference: "high-performance" });
-    rend.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
+    /* r128 : outputEncoding ne s'applique à l'écran ; les RenderTargets restent linéaires.
+       Le pipeline est donc cohérent avec ou sans post-traitement. */
+    rend.outputEncoding = THREE.sRGBEncoding;
+    rend.setPixelRatio(Math.max(0.5, Math.min(2, q.pixelRatio)));
     rend.setSize(window.innerWidth, window.innerHeight);
     rend.shadowMap.enabled = q.shadows; rend.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     S.renderer = rend;
     const vis = S.vis;
     const scene = new THREE.Scene(); S.scene = scene;
-    scene.fog = new THREE.Fog(vis.horizon, q.far * 0.28 * (vis.fogK || 1), q.far * (vis.fogF || 1));
+    scene.fog = new THREE.Fog(vis.horizon, q.far * 0.42 * (vis.fogK || 1), q.far * (vis.fogF || 1));
     scene.background = new THREE.Color(vis.horizon);
-    const cam = new THREE.PerspectiveCamera(Settings.get("fov"), window.innerWidth / window.innerHeight, 0.3, 3200); S.camera = cam;
+    const cam = new THREE.PerspectiveCamera(Settings.get("fov"), window.innerWidth / window.innerHeight, 0.3, Math.max(3200, q.far * 1.4)); S.camera = cam;
     scene.add(cam);
 
     S.hemi = new THREE.HemisphereLight(vis.hemiSky, vis.hemiGround, vis.hemiI * 0.62); scene.add(S.hemi);
@@ -386,7 +398,7 @@ const World = (function () {
     sun.castShadow = q.shadows;
     if (q.shadows) {
       sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
-      const sc = sun.shadow.camera; const R = 62; sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 1; sc.far = 260;
+      const sc = sun.shadow.camera; const R = 110; sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 1; sc.far = 340;
       sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05;
     }
     scene.add(sun); scene.add(sun.target); S.sun = sun;
@@ -430,10 +442,10 @@ const World = (function () {
   function update(time, focus) {
     const dt = Math.min(0.1, Math.max(0, time - (S._lt === undefined ? time : S._lt))); S._lt = time; S.dt = dt;
     const f = focus || S.camera.position;
-    S.sun.position.copy(f).addScaledVector(S.sunDir, 120); S.sun.target.position.copy(f);
+    S.sun.position.copy(f).addScaledVector(S.sunDir, 180); S.sun.target.position.copy(f);
     // alignement de l'ombre sur la grille de texels (évite le scintillement)
     if (S.quality.shadows) {
-      const step = 124 / S.quality.shadowMap; S.sun.position.x = Math.round(S.sun.position.x / step) * step; S.sun.position.z = Math.round(S.sun.position.z / step) * step; S.sun.target.position.x = S.sun.position.x - S.sunDir.x * 120; S.sun.target.position.z = S.sun.position.z - S.sunDir.z * 120;
+      const step = 220 / S.quality.shadowMap; S.sun.position.x = Math.round(S.sun.position.x / step) * step; S.sun.position.z = Math.round(S.sun.position.z / step) * step; S.sun.target.position.x = S.sun.position.x - S.sunDir.x * 180; S.sun.target.position.z = S.sun.position.z - S.sunDir.z * 180;
     }
     S.sky.position.copy(S.camera.position);
     const far = S.quality.far, cp = S.camera.position;

@@ -91,7 +91,9 @@ const Weather = (function () {
           col += uSunCol * pow(max(dot(vP, uSun), 0.0), 6.0) * 0.5 * (1.0 - dens * 0.5);
           col += vec3(0.75, 0.85, 1.0) * uFlash * 1.4;
           float a = dens * smoothstep(0.015, 0.16, vP.y);
-          gl_FragColor = vec4(col, a * 0.94);
+          /* Nuit d'orage : nuages plus perméables, pour laisser voir la lune et les étoiles. */
+          gl_FragColor = vec4(col, a * (0.94 - 0.42 * uDark));
+          #include <encodings_fragment>
         }`
     });
     const m = new T.Mesh(new T.SphereGeometry(2300, 32, 16), mat); m.frustumCulled = false; m.renderOrder = -9; return m;
@@ -102,7 +104,7 @@ const Weather = (function () {
     const g = new T.BufferGeometry(); g.setAttribute("position", new T.BufferAttribute(pos, 3)); g.setAttribute("aS", new T.BufferAttribute(sz, 1));
     const mat = new T.ShaderMaterial({ transparent: true, depthWrite: false, fog: false, blending: T.AdditiveBlending, uniforms: { uA: { value: amount } },
       vertexShader: "attribute float aS; void main(){ gl_PointSize = aS; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-      fragmentShader: "uniform float uA; void main(){ vec2 d = gl_PointCoord - 0.5; float a = smoothstep(0.5, 0.0, length(d)); gl_FragColor = vec4(vec3(0.85, 0.9, 1.0), a * uA); }" });
+      fragmentShader: "uniform float uA; void main(){ vec2 d = gl_PointCoord - 0.5; float a = smoothstep(0.5, 0.0, length(d)); gl_FragColor = vec4(vec3(0.85, 0.9, 1.0), a * uA); gl_FragColor = linearToOutputTexel( gl_FragColor ); }" });
     const p = new T.Points(g, mat); p.frustumCulled = false; p.renderOrder = -9.5; return p;
   }
 
@@ -122,7 +124,7 @@ const Weather = (function () {
             vec3 a = mv.xyz; vec3 c = mix(a, a - dv * uLen, position.y); vec3 side = normalize(cross(dv, a)); float dist = max(1.0, -a.z);
             c += side * position.x * max(uWidth, dist * 0.0016); gl_Position = projectionMatrix * vec4(c, 1.0);
             vA = (1.0 - position.y * 0.8) * smoothstep(58.0, 8.0, dist) * smoothstep(0.0, 2.0, dist); }`,
-        fragmentShader: "uniform vec3 uColor; uniform float uAlpha; varying float vA; void main(){ gl_FragColor = vec4(uColor, vA * uAlpha * 0.55); }" });
+        fragmentShader: "uniform vec3 uColor; uniform float uAlpha; varying float vA; void main(){ gl_FragColor = vec4(uColor, vA * uAlpha * 0.55); gl_FragColor = linearToOutputTexel( gl_FragColor ); }" });
       obj = new T.Mesh(geo, mat);
     } else {
       const geo = new T.BufferGeometry(); geo.setAttribute("position", new T.BufferAttribute(new Float32Array(count * 3), 3)); geo.setAttribute("aSeed", new T.BufferAttribute(seeds, 3));
@@ -133,7 +135,7 @@ const Weather = (function () {
             p.xz = aSeed.xz * b.xz + uWind * (h * 0.35 + uTime * uFlow) + vec2(sin(uTime * 0.7 + aSeed.x * 40.0), cos(uTime * 0.6 + aSeed.z * 37.0)) * uVar;
             vec2 rel = p.xz - uCam.xz; rel = mod(rel + b.xz * 0.5, b.xz) - b.xz * 0.5; p.xz = uCam.xz + rel; p.y += uCam.y - 7.0;
             vec4 mv = viewMatrix * vec4(p, 1.0); gl_PointSize = clamp(uSize * uScale / max(0.5, -mv.z), 1.0, 40.0); vA = smoothstep(62.0, 10.0, -mv.z) * 0.9; gl_Position = projectionMatrix * mv; }`,
-        fragmentShader: "uniform vec3 uColor; uniform float uAlpha; varying float vA; void main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d) * 2.0; if (r > 1.0) discard; float a = 1.0 - r * r; gl_FragColor = vec4(uColor, a * vA * uAlpha * 0.8); }" });
+        fragmentShader: "uniform vec3 uColor; uniform float uAlpha; varying float vA; void main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d) * 2.0; if (r > 1.0) discard; float a = 1.0 - r * r; gl_FragColor = vec4(uColor, a * vA * uAlpha * 0.8); gl_FragColor = linearToOutputTexel( gl_FragColor ); }" });
       if (sand) { mat.uniforms.uColor.value.set(0xc89a62); mat.uniforms.uBox.value.set(90, 30, 90); } else mat.uniforms.uColor.value.set(0xffffff);
       obj = new T.Points(geo, mat);
     }
@@ -176,6 +178,11 @@ const Weather = (function () {
   /* 2) mise en route dans la scène */
   function init(world) {
     resolve(); S = world; const q = Settings.quality(), C = W.cond, D = W.tod, sc = S.scene;
+    /* Plancher d'ambiant la nuit : sans lui, l'orage coupe toute la lumière et le char disparaît. */
+    if (D.stars > 0.5 && C.cloud > 0.6) {
+      if (S.hemi) S.hemi.intensity = Math.max(S.hemi.intensity, 0.45);
+      if (S.sun) S.sun.intensity = Math.max(S.sun.intensity, 0.18);
+    }
     hemiBase = S.hemi ? S.hemi.intensity : 1; sunBase = S.sun ? S.sun.intensity : 1;
     if (q.weatherFx !== false && Settings.get("weatherFx") !== false) {
       clouds = buildClouds(q); sc.add(clouds);

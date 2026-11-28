@@ -54,18 +54,22 @@ const HUD = (function () {
   addEventListener("resize", () => { if (Cam && Cam.sniper) H.buildScope(); });
 
   H.init = function () {
-    ["hud", "score", "sc-a", "sc-b", "sc-mode", "sc-obj", "compass", "minimap", "mini-theme", "fps", "feed", "aim", "gun-mark", "range", "penetration", "target-info", "scope", "sc-dist", "sc-el", "sc-ammo", "sc-zoom", "markers",
-      "veh-name", "veh-cat", "orient", "spd", "gear", "eng-fill", "m-engine", "m-canon", "m-trackL", "m-trackR", "crew", "an1", "an2", "ap1", "ap2", "slot1", "slot2", "reload", "reload-fill",
-      "dmg", "dmg-cv", "dmg-chips", "dmg-sum", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
-    { const d = Object.getOwnPropertyDescriptor(Node.prototype, "textContent");
-      for (const k in el) { const e = el[k]; if (e && e.nodeType === 1) Object.defineProperty(e, "textContent", { configurable: true, get() { return d.get.call(this); }, set(v) { v = String(v); if (d.get.call(this) !== v) d.set.call(this, v); } }); } }
-    el.dcv = el["dmg-cv"].getContext("2d"); el.rcv = el["rep-cv"].getContext("2d");
-    el.cmp = el.compass.getContext("2d"); el.mm = el.minimap.getContext("2d"); el.or = el.orient.getContext("2d");
-    $("keys-grid").innerHTML = KEYS.map(k => `<div><span>${k[0]}</span><span class="num">${k[1]}</span></div>`).join("");
-    el["mini-theme"].textContent = MAP_THEME_LABELS[MAP_THEME] || MAP_THEME;
-    el["ld-sub"].textContent = (MAP_THEME_LABELS[MAP_THEME] || MAP_THEME) + " · " + (MODE_LABEL[ARENA_CFG.mode] || "");
-    el.fps.classList.toggle("hidden", !Settings.get("showFps"));
-    if (mobileMode) document.body.classList.add("touch");
+    try {
+      ["hud", "score", "sc-a", "sc-b", "sc-mode", "sc-obj", "compass", "minimap", "mini-theme", "fps", "feed", "aim", "gun-mark", "range", "penetration", "target-info", "scope", "sc-dist", "sc-el", "sc-ammo", "sc-zoom", "markers",
+        "veh-name", "veh-cat", "orient", "spd", "gear", "eng-fill", "m-engine", "m-canon", "m-trackL", "m-trackR", "crew", "an1", "an2", "ap1", "ap2", "slot1", "slot2", "reload", "reload-fill",
+        "veh", "veh-body", "veh-view", "light-move", "light-fire", "light-reload", "light-turret", "light-fireout", "dmg-out", "dmg-out-val", "rep", "rep-cv", "rep-title", "rep-sub", "rep-list", "rep-hits", "rep-stats", "reload-txt", "respawn", "respawn-txt", "toast", "hit-ring", "touch", "t-reload", "t-reload-fill", "t-reload-label", "loading", "ld-title", "ld-sub", "ld-fill", "ld-step", "pause", "wait", "end", "mini"].forEach(i => el[i] = $(i));
+      { const d = Object.getOwnPropertyDescriptor(Node.prototype, "textContent");
+        for (const k in el) { const e = el[k]; if (e && e.nodeType === 1) Object.defineProperty(e, "textContent", { configurable: true, get() { return d.get.call(this); }, set(v) { v = String(v); if (d.get.call(this) !== v) d.set.call(this, v); } }); } }
+      el.cmp = el.compass ? el.compass.getContext("2d") : null; el.mm = el.minimap ? el.minimap.getContext("2d") : null; el.or = el.orient ? el.orient.getContext("2d") : null;
+      $("keys-grid").innerHTML = KEYS.map(k => `<div><span>${k[0]}</span><span class="num">${k[1]}</span></div>`).join("");
+      el["mini-theme"].textContent = MAP_THEME_LABELS[MAP_THEME] || MAP_THEME;
+      el["ld-sub"].textContent = (MAP_THEME_LABELS[MAP_THEME] || MAP_THEME) + " · " + (MODE_LABEL[ARENA_CFG.mode] || "");
+      el.fps.classList.toggle("hidden", !Settings.get("showFps"));
+      if (mobileMode) document.body.classList.add("touch");
+    } catch (e) {
+      // DOM pas encore prêt : on retente dans 100 ms
+      setTimeout(() => H.init(), 100);
+    }
   };
   const MODE_LABEL = { sandbox: "Terrain d'entraînement", test: "Champ d'essai", skirmish: "Escarmouche", deathmatch: "Deathmatch", campaign: "Campagne", online: "En ligne", multi: "Multijoueur local" };
 
@@ -84,11 +88,12 @@ const HUD = (function () {
   H.hideWait = function () { el.wait.classList.add("hidden"); };
   H.toast = function (text, ms) { el.toast.textContent = text; el.toast.classList.remove("hidden"); H.toastT = ms || 2200; };
   H.showEnd = function (d) {
-    const rows = d.stats.map(s => `<div><span>${s[0]}</span><b class="num">${s[1]}</b></div>`).join("");
-    el.end.innerHTML = `<div class="end-card cut ${d.win ? "win" : "loss"}"><h2>${d.title}</h2><div class="end-sub">${d.sub}</div>
+    const e = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const rows = (d.stats || []).map(s => `<div><span>${e(s[0])}</span><b class="num">${e(s[1])}</b></div>`).join("");
+    el.end.innerHTML = `<div class="end-card cut ${d.win ? "win" : "loss"}"><h2>${e(d.title)}</h2><div class="end-sub">${e(d.sub)}</div>
       <div class="end-grid">${rows}</div>
-      <div class="end-xp"><div><span class="disp" style="font-size:13px;letter-spacing:.14em;color:var(--dim)">Expérience gagnée</span><small>${d.xpNote || ""}</small></div><b class="num">+${d.xp.toLocaleString("fr-FR")} XP</b></div>
-      <div class="pa-btns"><button class="btn primary disp" id="e-again">${d.again || "Rejouer"}</button><button class="btn disp" id="e-lobby">Retour au QG</button></div></div>`;
+      <div class="end-xp"><div><span class="disp" style="font-size:13px;letter-spacing:.14em;color:var(--dim)">Expérience gagnée</span><small>${e(d.xpNote || "")}</small></div><b class="num">+${(Number(d.xp) || 0).toLocaleString("fr-FR")} XP</b></div>
+      <div class="pa-btns"><button class="btn primary disp" id="e-again">${e(d.again || "Rejouer")}</button><button class="btn disp" id="e-lobby">Retour au QG</button></div></div>`;
     el.end.classList.remove("hidden");
     $("e-again").onclick = () => d.onAgain ? d.onAgain() : location.reload(); $("e-lobby").onclick = () => location.href = "lobby.html";
     if (document.pointerLockElement) document.exitPointerLock();
@@ -102,7 +107,7 @@ const HUD = (function () {
     setTimeout(() => d.classList.add("old"), 6500); setTimeout(() => d.remove(), 7200);
   }
   H.feed = feed;
-  const esc = s => String(s).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   H.event = function (type, detail, bearing, outgoing) {
     const d = esc(detail || "");
     switch (type) {
@@ -140,9 +145,112 @@ const HUD = (function () {
   };
   H.setRespawn = function (txt) { if (txt === null) el.respawn.classList.add("hidden"); else { el.respawn.classList.remove("hidden"); el["respawn-txt"].textContent = txt; } };
 
-  /* ───── Modules internes : état du véhicule et rapport d'impact ───── */
+  /* ───── Système d'affichage des dégâts (subis + infligés) ───── */
+  const DMG_MAX_IN = 8, DMG_MAX_OUT = 10;
+  let incomingHits = [], outgoingHits = [];
+  let outgoingStats = { dmg: 0, pen: 0, kills: 0 };
   let rep = null;
   const OUT = { ricochet: "Ricochet", blocked: "Arrêté", pen: "Perforation", spall: "Éclats", overmatch: "Overmatch" };
+
+
+  /* Ajoute un impact subi (appelé par le moteur de dégâts quand le joueur est touché) */
+  H.reportIncoming = function (r) {
+    incomingHits.unshift({
+      t: performance.now(), res: r.outcome, shell: r.shell || "", zone: r.zone || "",
+      dir: r.dir || 0, dmg: r.changes ? r.changes.reduce((s, c) => s + (1 - c.to), 0) : 0,
+      dead: r.detonated || false
+    });
+    if (incomingHits.length > DMG_MAX_IN) incomingHits.pop();
+    if (r.outcome === "penetration" || r.outcome === "blocked" || r.outcome === "ricochet" || r.outcome === "spall") {
+      const bearing = typeof r.dir === "number" ? r.dir : 0;
+      hitArrow(bearing, false);
+    }
+    if (r.detonated) feed("pen", `<b>Détonation de la soute !</b>`);
+    else if (r.fire) feed("pen", `<b>Incendie déclenché</b>`);
+    refreshDamageUI();
+  };
+
+  /* Ajoute un tir infligé (appelé quand le joueur touche un ennemi) */
+  H.reportOutgoing = function (r) {
+    const t = r.tank;
+    const isKill = r.detonated || (t && t.destroyed);
+    if (isKill) outgoingStats.kills++;
+    if (r.outcome === "penetration" || r.outcome === "spall" || r.outcome === "overmatch") outgoingStats.pen++;
+    const dmg = r.dmg !== undefined ? r.dmg : (r.changes ? r.changes.reduce((s, c) => s + (1 - c.to), 0) : 0);
+    outgoingStats.dmg += Math.round(dmg);
+
+    outgoingHits.unshift({
+      t: performance.now(), res: r.outcome, shell: r.shell || "",
+      target: t._playerName || t._tankKey || "Ennemi",
+      zone: r.zone || "", dmg: Math.round(dmg), pen: r.pen || 0, eff: r.eff || 0,
+      kill: isKill
+    });
+    if (outgoingHits.length > DMG_MAX_OUT) outgoingHits.pop();
+    refreshDamageUI();
+    hitMarker();
+  };
+
+  /* Dessin de l'état du char sur le panneau Véhicule (vue de dessus + voyants fonctions) */
+  function refreshDamageUI() {
+    const t = localTank;
+
+    const vehCanvas = document.getElementById("veh-view");
+    if (!vehCanvas) return;
+    const vehCtx = vehCanvas.getContext("2d");
+
+    if (t && t.int) {
+      const I = t.int;
+      const M = I.byId;
+
+      // Dessin de la silhouette + modules sur le canvas du panneau Véhicule
+      Dmg.drawTank(vehCtx, 100, 100, t, null);
+
+      // Voyants fonctions : rouge = indisponible (module détruit), vert = opérationnel
+      const setLight = (id, ok) => {
+        const b = el[id]; if (!b) return;
+        const dot = b.querySelector(".light-dot");
+        dot.className = "light-dot " + (ok ? "on" : "off");
+      };
+
+      // Avancer : moteur OK + transmission OK + conducteur vivant
+      const driverOk = !M.driver || M.driver.hp > 0;
+      const moveOk = driverOk && M.engine.hp > 0 && M.trans.hp > 0;
+      setLight("light-move", moveOk);
+
+      // Tirer : culasse vivante
+      setLight("light-fire", M.breech.hp > 0);
+
+      // Recharger : chargeur vivant
+      const loaderOk = !M.loader || M.loader.hp > 0;
+      setLight("light-reload", loaderOk);
+
+      // Tourner tourelle : bague vivante + tireur vivant
+      const turretOk = M.ring.hp > 0 && M.gunner.hp > 0;
+      setLight("light-turret", turretOk);
+
+      // Incendie
+      const fireOn = !!I.fire;
+      setLight("light-fireout", !fireOn); // vert = pas d'incendie, rouge = incendie
+      const fireDot = el["light-fireout"]?.querySelector(".light-dot");
+      if (fireDot) fireDot.classList.toggle("blink", fireOn);
+    }
+
+    drawOutgoingHistory();
+    if (t && el["rep-stats"]) el["rep-stats"].textContent = outgoingStats.dmg + " dmg · " + outgoingStats.pen + " pen · " + outgoingStats.kills + " destr";
+    if (el["dmg-out-val"]) el["dmg-out-val"].textContent = outgoingStats.dmg + " dmg · " + outgoingStats.pen + " pen · " + outgoingStats.kills + " destr";
+    el["dmg-out"].classList.toggle("hidden", outgoingStats.dmg === 0 && outgoingStats.pen === 0 && outgoingStats.kills === 0);
+  }
+
+  /* Historique des tirs infligés */
+  function drawOutgoingHistory() {
+    if (el["rep-hits"]) el["rep-hits"].innerHTML = outgoingHits.map(h => {
+      const resCls = h.res === "penetration" ? "pen" : h.res === "blocked" ? "blocked" : h.res === "ricochet" ? "ricochet" : h.res === "spall" ? "spall" : h.kill ? "dead" : "";
+      const resTxt = h.kill ? "DÉTRUIT" : h.res === "penetration" ? "PERFO" : h.res === "blocked" ? "ARRÊTÉ" : h.res === "ricochet" ? "RICOCHET" : h.res === "spall" ? "ÉCLATS" : h.res;
+      return `<li><span class="tgt">${esc(h.target)}<span class="ammo">${h.shell}</span></span><span class="res ${resCls}">${resTxt}</span><span class="val">${h.dmg > 0 ? h.dmg + " dmg" : "—"}</span></li>`;
+    }).join("");
+  }
+
+  /* Rapport détaillé d'impact (popup latérale, 9 s) — conservé pour le dernier tir */
   H.report = function (r, dir) {
     rep = { r, dir, until: performance.now() + 9000 };
     el["rep-title"].textContent = dir === "out" ? "Votre tir" : "Tir reçu"; el["rep-sub"].textContent = r.tank._tankKey || "";
@@ -154,30 +262,19 @@ const HUD = (function () {
     if (r.outcome !== "ricochet" && r.outcome !== "blocked" && !(r.changes || []).length && !r.detonated) h += li("ok", "Aucun module touché");
     if (r.detonated) h += li("dead", "Détonation de la soute !");
     if (r.fire) h += li("dmg", "Incendie déclenché");
-    el["rep-list"].innerHTML = h; el.rep.classList.remove("hidden");
+    const rl = $("rep-list"); rl.innerHTML = h; rl.style.display = "block"; el.rep.classList.remove("hidden");
+    Dmg.drawTank($("rep-cv"), 170, 170, r.tank, r);
+    refreshDamageUI();
   };
-  let dmgT = 0, dmgKey = "";
+
+  let dmgT = 0;
   function drawDamage(dt) {
     dmgT += dt;
-    if (dmgT > 0.08) {
-      dmgT = 0; const t = localTank;
-      if (t && t.int) {
-        Dmg.drawTank(el.dcv, 150, 150, t, null);
-        const I = t.int, worst = ids => { let w = 1; for (const i of ids) w = Math.min(w, I.byId[i] ? I.byId[i].hp : 1); return w; };
-        const cls = hp => hp <= 0 ? "dead" : hp < 0.999 ? "dmg" : "";
-        const crewTot = Dmg.crewTotal(t), crewOk = Dmg.crewAlive(t);
-        const racks = I.mods.filter(m => m.kind === "ammo").map(m => m.id), fuel = ["fuelL", "fuelR"];
-        const chips = [["Équipage " + crewOk + "/" + crewTot, crewOk <= 1 ? 0 : crewOk < crewTot ? 0.5 : 1], ["Moteur", I.byId.engine.hp], ["Boîte", I.byId.trans.hp], ["Culasse", I.byId.breech.hp], ["Tourelle", I.byId.ring.hp], ["Soutes", worst(racks)], ["Réservoirs", worst(fuel)],
-          ["Chenille G", t.modules.trackLeft ? 1 : 0], ["Chenille D", t.modules.trackRight ? 1 : 0]];
-        let h = chips.map(c => `<span class="chip ${cls(c[1])}">${c[0]}</span>`).join("") + (I.fire ? `<span class="chip fire">Incendie</span>` : "") + `<span class="chip" style="color:var(--dim);border-color:transparent;background:none">Soutes : ${Math.round(I.fill * 100)} % pleines</span>`;
-        if (h !== dmgKey) { el["dmg-chips"].innerHTML = h; dmgKey = h; }
-        el["dmg-sum"].textContent = t.engineHealth + " % moteur";
-      }
+    if (dmgT > 0.05) {
+      dmgT = 0;
+      refreshDamageUI();
     }
-    if (rep) {
-      if (performance.now() > rep.until) { rep = null; el.rep.classList.add("hidden"); }
-      else if (dmgT < 0.01) Dmg.drawTank(el.rcv, 150, 150, rep.r.tank, rep.r);
-    }
+    if (rep && performance.now() > rep.until) { rep = null; el.rep.classList.add("hidden"); $("rep-list").style.display = "none"; }
   }
 
   /* ───── Minicarte ───── */
@@ -285,7 +382,19 @@ const HUD = (function () {
   }
 
   function getPenetrationState() {
-    const t = localTank; const target = Cam && Cam.aim ? Cam.aim.target : null;
+    const t = localTank;
+    const pred = (typeof Cam !== "undefined" && Cam.impact) ? Cam.impact : null;
+    // Quand la trajectoire réelle est disponible, on affiche SON résultat, pas une approximation HUD.
+    if (pred && pred.valid && pred.kind && pred.kind !== "none") {
+      if (pred.kind !== "tank") return { kind: "uncertain", label: "—" };
+      if (pred.res) {
+        const o = pred.res.outcome;
+        if (o === "blocked") return { kind: "blocked", label: "BLOQ" };
+        if (o === "ricochet") return { kind: "uncertain", label: "RICO" };
+        return { kind: "possible", label: "PEN" };
+      }
+    }
+    const target = Cam && Cam.aim ? Cam.aim.target : null;
     if (!t || !target || target.destroyed) return null;
     const ammoType = t.currentAmmo || selectedAmmos[0];
     const data = getAmmoData(ammoType, t._tankModules);
@@ -307,9 +416,25 @@ const HUD = (function () {
     return { kind: "uncertain", label: "INC" };
   }
 
+  /* Zones opaques du HUD : on évite que les étiquettes de chars se posent dessus.
+     Les rectangles sont mis en cache (coût de getBoundingClientRect non négligeable par image). */
+  const BLOCKERS = ["score", "veh", "dmg", "rep", "feed", "dmg-out"];
+  let blockRects = [], blockT = 0;
+  function refreshBlockers() {
+    blockRects = BLOCKERS.map(id => el[id]).filter(Boolean).map(e => {
+      const r = e.getBoundingClientRect();
+      return { l: r.left - 4, t: r.top - 4, r: r.right + 4, b: r.bottom + 4 };
+    }).filter(r => r.r > r.l && r.b > r.t);
+  }
+  function blocked(x, y) {
+    for (const r of blockRects) if (x >= r.l && x <= r.r && y >= r.t && y <= r.b) return true;
+    return false;
+  }
+
   /* ───── Mise à jour par image ───── */
   H.update = function (dt, cam, rules) {
     const t = localTank; if (!t) return;
+    blockT -= dt; if (blockT <= 0) { blockT = 0.25; refreshBlockers(); }
     // FPS
     H.fpsAcc += dt; H.fpsN++;
     if (H.fpsAcc > 0.5) { if (Settings.get("showFps")) el.fps.textContent = Math.round(H.fpsN / H.fpsAcc) + " IPS"; H.fpsAcc = 0; H.fpsN = 0; }
@@ -317,17 +442,6 @@ const HUD = (function () {
     // Score
     { const mb = localTank && localTank.teamId === "B"; el["sc-a"].textContent = mb ? teamScore.B : teamScore.A; el["sc-b"].textContent = mb ? teamScore.A : teamScore.B; }
     el["sc-mode"].textContent = rules.modeLabel(); el["sc-obj"].textContent = rules.objectiveText();
-    // Véhicule
-    const kmh = Math.abs(t.speed) / (PIXELS_PER_METER * TICK_RATE) * 3.6;
-    el.spd.textContent = Math.round(kmh);
-    el.gear.textContent = t.gear > 0 ? t.gear : t.gear < 0 ? "R" + (t.gear === -2 ? "2" : "") : "N";
-    el["veh-name"].textContent = t._tankKey; el["veh-cat"].textContent = t.profile.catLabel;
-    const eh = t.engineHealth; el["eng-fill"].style.width = eh + "%"; el["eng-fill"].style.background = eh > 60 ? "var(--ok)" : eh > 25 ? "var(--warn)" : "var(--bad)";
-    const mset = (id, ok, mid) => { const e = el[id]; e.className = ok ? (mid ? "mid" : "") : "bad"; };
-    mset("m-engine", t.modules.engine && eh > 0, eh < 60); mset("m-canon", t.modules.canon); mset("m-trackL", t.modules.trackLeft); mset("m-trackR", t.modules.trackRight);
-    const crewKeys = ["commander", "gunner", "loader", "driver", "radio"], nCrew = t._tankModules.crew || t.profile.crew || 4;
-    let ch = ""; crewKeys.forEach((k, i) => { ch += `<i class="${i >= nCrew && !t.modules.crew[k] && k === "radio" ? "none" : t.modules.crew[k] ? "" : "dead"}"></i>`; });
-    if (el.crew._h !== ch) { el.crew.innerHTML = ch; el.crew._h = ch; }
     // Munitions
     const am = selectedAmmos;
     [0, 1].forEach(i => {
@@ -345,12 +459,12 @@ const HUD = (function () {
       el["t-reload"].classList.toggle("ready", t.reload <= 0 && !!t.modules.canon);
       el["t-reload-label"].textContent = !t.modules.canon ? "CANON HORS SERVICE" : t.reload > 0 ? "RECHARGE · " + (t.reload / 60).toFixed(1) + " s" : "CANON PRÊT";
     }
-    drawOrient(); drawCompass(); drawDamage(dt);
+    drawCompass(); drawDamage(dt);
     H.miniT += dt; if (H.miniT > 0.05) { H.miniT = 0; drawMinimap(); }
     // Viseur : point visé + marqueur de canon
     const aim = Cam.aim;
     const penState = getPenetrationState();
-    el.range.textContent = Math.round(aim.dist) + " m";
+    el.range.textContent = "Visée · " + Math.round(aim.dist) + " m";
     el.aim.classList.remove("possible", "uncertain", "blocked");
     if (penState) {
       el.aim.classList.add(penState.kind);
@@ -362,8 +476,8 @@ const HUD = (function () {
       el.penetration.classList.add("hidden");
       el.penetration.textContent = "";
     }
-    /* Point d'impact prévu (trajectoire balistique réelle depuis le canon), recalculé une image sur deux */
-    H._impN = (H._impN || 0) + 1; const imp = (H._impN & 1) || !Cam.impact.valid ? Cam.predictImpact() : Cam.impact;
+    /* Point d'impact prévu : arena-main.js le recalcule à ~8 Hz, le HUD ne fait que l'afficher. */
+    const imp = Cam.impact;
     const gm = el["gun-mark"];
     if (imp.valid && !t.destroyed) {
       const pr = Cam.project(imp.x * PX, imp.z * PX, imp.y * PX, cam, H._p || (H._p = {}));
@@ -376,7 +490,7 @@ const HUD = (function () {
         px = cx + dx * k; py = cy + dy * k; edge = true;
       }
       gm.style.display = "block"; gm.style.left = px + "px"; gm.style.top = py + "px";
-      gm.lastChild.textContent = Math.round(imp.dist) + " m";
+      gm.lastChild.textContent = "Impact · " + Math.round(imp.dist) + " m";
       const dd = Math.hypot(px - cx, py - cy); gm.classList.toggle("far", dd > 160 && !edge); gm.classList.toggle("edge", edge); gm.classList.toggle("rside", px > W * 0.6); gm.classList.toggle("onfoe", !!(imp.target && imp.target.teamId !== t.teamId));
     } else gm.style.display = "none";
     if (Cam.sniper) {
@@ -416,6 +530,8 @@ const HUD = (function () {
       if (!ally && lv < 1) return;
       const d = Math.hypot(tk.x - t.x, tk.y - t.y) * PX;
       const p = Cam.project(tk.x * PX, tk.profile.totalHeight + 1.4 + (tk.gz || 0) * PX, tk.y * PX, cam, H._q || (H._q = {})); if (!p) return;
+      /* Masqué par un panneau ou hors écran : on ne consomme pas de marqueur du pool. */
+      if (blocked(p.x, p.y) || p.x < -40 || p.x > innerWidth + 40 || p.y < -40 || p.y > innerHeight + 40) return;
       const e = marker(mi++);
       e.style.display = "block"; e.style.left = p.x + "px"; e.style.top = p.y + "px";
       if (ally) {

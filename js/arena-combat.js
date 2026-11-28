@@ -56,15 +56,31 @@ function checkWinCondition() {
 }
 
 /* ───────────── Apparition ───────────── */
+/* Dernier recours si tous les essais aléatoires tombent dans un obstacle : on balaie
+   des anneaux autour du point voulu plutôt que de renvoyer une position bloquée. */
+function freeSpotNear(cx, cy, margin) {
+  // Le balayage couvre la diagonale de la carte (12000 × 12000), pas seulement 8 anneaux.
+  const maxRing = Math.ceil(Math.hypot(MAP_WIDTH, MAP_HEIGHT) / 180);
+  for (let ring = 1; ring <= maxRing; ring++) {
+    for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI / 8, r = ring * 180;
+      const x = clamp(cx + Math.cos(a) * r, 220, MAP_WIDTH - 220), y = clamp(cy + Math.sin(a) * r, 220, MAP_HEIGHT - 220);
+      if (!obstacleBlocksPoint(x, y, margin)) return { x, y };
+    }
+  }
+  // Dernier recours : centre de la carte, qui est toujours dégagé sur nos cartes.
+  return { x: clamp(MAP_WIDTH / 2, 220, MAP_WIDTH - 220), y: clamp(MAP_HEIGHT / 2, 220, MAP_HEIGHT - 220) };
+}
 function getSpawnPoint(team, slot, n) {
   const k = slot === undefined ? Math.random() * 6 : slot, cnt = n || 6, c = MAP_LAYOUT.spawn[team === "A" ? "A" : "B"];
   const dx = MAP_WIDTH / 2 - c[0], dy = MAP_HEIGHT / 2 - c[1], d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;   // direction vers le centre
-  let x = c[0], y = c[1];
+  let x = c[0], y = c[1], ok = false;
   for (let t = 0; t < 10; t++) {
     const off = (k - (cnt - 1) / 2) * 300 + (Math.random() - 0.5) * 60, depth = (Math.random() - 0.5) * 240;
     x = clamp(c[0] - uy * off + ux * depth, 200, MAP_WIDTH - 200); y = clamp(c[1] + ux * off + uy * depth, 200, MAP_HEIGHT - 200);
-    if (!obstacleBlocksPoint(x, y, 70)) break;
+    if (!obstacleBlocksPoint(x, y, 70)) { ok = true; break; }
   }
+  if (!ok) ({ x, y } = freeSpotNear(c[0], c[1], 70));
   return { x, y, heading: Math.atan2(ux, -uy) };
 }
 
@@ -72,12 +88,13 @@ function getSpawnPoint(team, slot, n) {
 function placeTestTarget(bot, i, n) {
   const lt = localTank, h = lt.alphaTank, F = { x: Math.sin(h), y: -Math.cos(h) }, Rr = { x: Math.cos(h), y: Math.sin(h) };
   const dist = (ARENA_CFG.testDist || 150) * M2PX, lat = (i - (n - 1) / 2) * 26 * M2PX;
-  let x = lt.x, y = lt.y;
+  let x = lt.x, y = lt.y, ok = false;
   for (let t = 0; t < 14; t++) {
     const dd = dist - t * 8 * M2PX * (t % 2 ? 1 : -1) * 0.5;
     x = clamp(lt.x + F.x * dd + Rr.x * lat, 250, MAP_WIDTH - 250); y = clamp(lt.y + F.y * dd + Rr.y * lat, 250, MAP_HEIGHT - 250);
-    if (!obstacleBlocksPoint(x, y, 80)) break;
+    if (!obstacleBlocksPoint(x, y, 80)) { ok = true; break; }
   }
+  if (!ok) ({ x, y } = freeSpotNear(x, y, 80));
   const facing = ARENA_CFG.testBehavior === "patrol" ? h + Math.PI / 2 : h + Math.PI;   // de face (ou de profil s'il roule)
   bot.x = bot.px = x; bot.y = bot.py = y; bot.alphaTank = bot.pAT = facing; bot.alphaTurret = bot.pATu = facing - Math.PI / 2;
   bot._home = { x, y, heading: facing };
@@ -158,7 +175,8 @@ function switchAmmo(type) {
   const reloadTimes = { AP: 8, APBC: 8, APCBC: 8, APHE: 8, APCR: 7, HE: 9, HEAT: 10, APDS: 10, fumigène: 6, shrapnel: 9 };
   const baseTicks = (t._tankModules.reloadSec ? t._tankModules.reloadSec : (reloadTimes[type] || 8)) * 60;
   const crewRatio = t.crewAlive / Object.keys(t.modules.crew).length, crewP = crewRatio < 1 ? 1 + (1 - crewRatio) * 1.5 : 1, loaderP = t.modules.crew.loader ? 1 : 2.5;
-  t.reload = Math.round(baseTicks * crewP * loaderP * (t.reload <= 5 ? 0.8 : 0.5)); t.reloadMax = Math.max(t.reload, 1);
+  // Changement pendant un recharge en cours : pénalité. Canon prêt : échange rapide.
+  t.reload = Math.round(baseTicks * crewP * loaderP * (t.reload > 5 ? 1.4 : 0.8)); t.reloadMax = Math.max(t.reload, 1);
   t.currentAmmo = type; t._aimKey = null;
 }
 

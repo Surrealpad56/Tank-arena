@@ -106,15 +106,16 @@ function losInfo(x1, y1, z1, x2, y2, z2) {
 // ============================================================
 // POINTS DE CAPTURE
 // ============================================================
-// Deathmatch et champ d'essai : aucune zone (ni marqueur, ni minimap, ni objectif pour l'IA)
-const CAPTURE_POINTS = (ARENA_CFG.mode === "deathmatch" || ARENA_CFG.mode === "test" || ARENA_CFG.caps === false) ? [] : MAP_LAYOUT.caps;
+// Deathmatch, campagne et champ d'essai : aucune zone (ni marqueur, ni objectif pour l'IA).
+// En campagne l'objectif est le nombre d'éliminations, pas des drapeaux qui ne rapportent rien.
+const CAPTURE_POINTS = (["deathmatch", "test", "campaign"].includes(ARENA_CFG.mode) || ARENA_CFG.caps === false) ? [] : MAP_LAYOUT.caps;
 const CAPTURE_RATE = 1 / 180;
 const CAPTURE_SCORE_INTERVAL = 600; // 3 secondes pour capturer seul
 
-        // APRÈS (remplace toute la fonction)
         function tickCapturePoints() {
-            if (ARENA_CFG.mode === "deathmatch") return;
-            if (!localTank || localTank.destroyed) return;
+            if (!CAPTURE_POINTS.length) return;
+            // La capture dépend des chars présents dans la zone, pas de l'état du joueur local :
+            // en réapparition, les bots doivent pouvoir continuer à capturer pendant sa mort.
             const allTanks = items.filter(i => i instanceof Tank && !i.destroyed);
             for (const cp of CAPTURE_POINTS) {
                 let countA = 0, countB = 0;
