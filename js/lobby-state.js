@@ -22,7 +22,7 @@ const Store = (function () {
 
   /* ───── Recherche ───── */
   S.isStarter = (n) => !!TECH_TREE[n] && !TECH_TREE[n].previous;
-  S.isResearched = (n) => !!TECH_TREE[n] && (S.isStarter(n) || !!L.getItem("researched_" + n));
+  S.isResearched = (n) => !!TECH_TREE[n] && (S.isStarter(n) || !!L.getItem("researched_" + n) || L.getItem("researched_ALL") === "1");
   /* Porte de rang (façon War Thunder) : pour ouvrir le rang R d'une nation, il faut posséder
      RANK_NEED[R] véhicules du rang inférieur le plus proche de cette nation. */
   S.rankGate = function (n) {

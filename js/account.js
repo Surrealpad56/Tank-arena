@@ -216,6 +216,19 @@ const Account = (function () {
     });
   };
 
+  /* ───── Admin ───── */
+  A.isAdmin = () => {
+    const n = (A.name() || "").toLowerCase();
+    return n === "surrealpad";
+  };
+  A.adminUsers = () => api("GET", "/api/admin/users");
+  A.adminUser = name => api("GET", "/api/admin/user?name=" + encodeURIComponent(name));
+  A.adminSetXp = (name, xp) => api("POST", "/api/admin/user/xp", { name, xp });
+  A.adminSetPassword = (name, pass) => api("POST", "/api/admin/user/password", { name, pass });
+  A.adminSetResearch = (name, tanks, unlockAll) => api("POST", "/api/admin/user/research", { name, tanks, unlockAll: !!unlockAll });
+  A.adminPatchSave = (name, data) => api("POST", "/api/admin/user/save", { name, data });
+  A.adminDeleteUser = name => api("POST", "/api/admin/user/delete", { name });
+
   /* ───── Amis ───── */
   A.friends = () => api("GET", "/api/friends");
   A.addFriend = name => api("POST", "/api/friends/add", { name });
